@@ -26,7 +26,8 @@ class Curriculum:
             self.n_points, self.n_points_schedule
         )
 
-    # updates the curriculum every iteration: we sample randomly to enforce exchangeability
+    # updates the curriculum every iteration
+    # this enforces exchangeability
     def update_var(self, var, schedule):
         trunc = random.choice(range(schedule.start, schedule.end + 1))
         return trunc
