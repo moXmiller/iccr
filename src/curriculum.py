@@ -27,7 +27,6 @@ class Curriculum:
         )
 
     # updates the curriculum every iteration: we sample randomly to enforce exchangeability
-    # modified to not have curriculum learning
     def update_var(self, var, schedule):
         trunc = random.choice(range(schedule.start, schedule.end + 1))
         return trunc
