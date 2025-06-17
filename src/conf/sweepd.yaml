@@ -1,0 +1,8 @@
+inherit:
+    - counterfactual.yaml
+
+model:
+    family: "gpt2_ao"
+    
+wandb:
+    name: "standard_ao"

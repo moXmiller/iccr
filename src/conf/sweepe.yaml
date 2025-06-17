@@ -1,0 +1,5 @@
+inherit:
+    - attentiononly.yaml
+
+wandb:
+    name: "no_index_token"

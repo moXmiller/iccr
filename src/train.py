@@ -7,9 +7,8 @@ from tqdm import tqdm
 import torch
 import yaml
 
-from eval import get_run_metrics
 from tasks import get_task_sampler
-from samplers import get_data_sampler
+from dataset import get_data_sampler
 from curriculum import Curriculum
 from schema import schema
 from models import build_model
@@ -19,21 +18,14 @@ import wandb
 torch.backends.cudnn.benchmark = True
 
 
-def train_step(model, xs, ys, optimizer, loss_func):
+def train_step(model, data, o_vars, optimizer, loss_func):
     optimizer.zero_grad()
-    output = model(xs, ys)
-    loss = loss_func(output, ys)
+    output, gt = model(data, o_vars = o_vars)
+    loss = loss_func(output, gt)
     loss.backward()
     optimizer.step()
-    return loss.detach().item(), output.detach()
-
-
-def sample_seeds(total_seeds, count):
-    seeds = set()
-    while len(seeds) < count:
-        seeds.add(randint(0, total_seeds - 1))
-    return seeds
-
+    return loss.detach().item(), output.detach(), gt.detach()
+    
 
 def train(model, args):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.training.learning_rate)
@@ -49,66 +41,94 @@ def train(model, args):
         for i in range(state["train_step"] + 1):
             curriculum.update()
 
+    continuation = bool(args.training.continuation)
     n_dims = model.n_dims
     bsize = args.training.batch_size
-    data_sampler = get_data_sampler(args.training.data, n_dims=n_dims)
+    
+    dag_type = args.training.data_kwargs["dag_type"]
+    max_o_dims = n_dims
+
+    if args.training.data == "sde":
+        from sde import get_sde_data_sampler
+        data_sampler = get_sde_data_sampler(args.training, o_dims=max_o_dims,
+                                            **args.training.data_kwargs)
+    else:
+        data_sampler = get_data_sampler(args.training,
+                                        o_dims = max_o_dims,                # this calls the data_sampler LinearAssignments
+                                        **args.training.data_kwargs)
+
     task_sampler = get_task_sampler(
         args.training.task,
-        n_dims,
-        bsize,
-        num_tasks=args.training.num_tasks,
+        n_dims,                                                             # we do not require any of this for our purposes
+        bsize,                                                              # we simply have it to agree with Garg's structure
+        num_tasks=args.training.num_tasks,                                  # required for pool_dict, which we do not use
         **args.training.task_kwargs,
     )
     pbar = tqdm(range(starting_step, args.training.train_steps))
 
-    num_training_examples = args.training.num_training_examples
+    if dag_type == "only_parent": block_setup = True
+    else: block_setup = False
+
+    transformation = args.training.transformation
 
     for i in pbar:
-        data_sampler_args = {}
-        task_sampler_args = {}
+        task_sampler_args = {}        
+        
+        if args.training.data == "sde":
+            assert "sde" in args.model.family
+            data = data_sampler.complete_sde_dataset(n_thetas = bsize,
+                                                     o_vars = curriculum.n_vars_truncated,
+                                                     lamb=args.training.lamb,
+                                                     max_time = args.training.max_time,
+                                                     n_points= args.model.n_positions,
+                                                     itr = i,
+                                                     split="train")
+            o_points = data_sampler.o_points
+        else:
+            o_points = curriculum.n_points
+            data = data_sampler.complete_dataset(n_thetas = bsize,                
+                                                o_points = o_points,
+                                                o_vars = curriculum.n_vars_truncated,
+                                                itr = i,
+                                                continuation = continuation,
+                                                block_setup=block_setup,
+                                                transformation=transformation)
 
-        if "sparse" in args.training.task:
-            task_sampler_args["valid_coords"] = curriculum.n_dims_truncated
-        if num_training_examples is not None:
-            assert num_training_examples >= bsize
-            seeds = sample_seeds(num_training_examples, bsize)
-            data_sampler_args["seeds"] = seeds
-            task_sampler_args["seeds"] = [s + 1 for s in seeds]
-
-        xs = data_sampler.sample_xs(
-            curriculum.n_points,
-            bsize,
-            curriculum.n_dims_truncated,
-            **data_sampler_args,
-        )
         task = task_sampler(**task_sampler_args)
-        ys = task.evaluate(xs)
+        
+        ess = data_sampler.ess
 
         loss_func = task.get_training_metric()
 
-        loss, output = train_step(model, xs.cuda(), ys.cuda(), optimizer, loss_func)
+        if dag_type not in ["only_parent", "one_parent", "any"]:
+            print("Transformer not defined for this dag_type: modify models.py")
+            raise NotImplementedError
+        
+        loss, output, gt = train_step(model, data.cuda(), o_vars = curriculum.n_vars_truncated,
+                                      optimizer = optimizer, loss_func = loss_func)
 
-        point_wise_tags = list(range(curriculum.n_points))
-        point_wise_loss_func = task.get_metric()
-        point_wise_loss = point_wise_loss_func(output, ys.cuda()).mean(dim=0)
+        #####
 
-        baseline_loss = (
-            sum(
-                max(curriculum.n_dims_truncated - ii, 0)
-                for ii in range(curriculum.n_points)
-            )
-            / curriculum.n_points
-        )
+        # # what is point_wise stuff?
+        # point_wise_tags = list(range(o_points))
+        # point_wise_loss_func = task.get_metric()
+        # point_wise_loss = point_wise_loss_func(output, gt.cuda()).mean(dim=0)
+        
+        # baseline_loss = (
+        #     sum(
+        #         max(curriculum.n_dims_truncated - ii, 0)
+        #         for ii in range(o_points)
+        #     )
+        #     / o_points
+        # )
 
         if i % args.wandb.log_every_steps == 0 and not args.test_run:
             wandb.log(
                 {
                     "overall_loss": loss,
-                    "excess_loss": loss / baseline_loss,
-                    "pointwise/loss": dict(
-                        zip(point_wise_tags, point_wise_loss.cpu().numpy())
-                    ),
-                    "n_points": curriculum.n_points,
+                    # "excess_loss": loss / baseline_loss,
+                    "effective_support_size": ess,
+                    "n_points": o_points,
                     "n_dims": curriculum.n_dims_truncated,
                 },
                 step=i,
@@ -157,14 +177,11 @@ def main(args):
 
     train(model, args)
 
-    if not args.test_run:
-        _ = get_run_metrics(args.out_dir)  # precompute metrics for eval
-
 
 if __name__ == "__main__":
     parser = QuinineArgumentParser(schema=schema)
     args = parser.parse_quinfig()
-    assert args.model.family in ["gpt2", "lstm"]
+    assert args.model.family in ["gpt2", "lstm", "gpt2_sde", "gpt2_ao", "gpt2_mlp", "rnn_sde", "rnn", "lstm_sde", "gru_sde", "gru", "gpt2_ao_sde"]
     print(f"Running with: {args}")
 
     if not args.test_run:

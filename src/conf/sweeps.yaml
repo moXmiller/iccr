@@ -1,0 +1,14 @@
+inherit:
+    - lstm.yaml
+
+model:
+    family: "lstm_sde"
+
+training:
+    data: "sde"
+    train_steps: 10000
+    save_every_steps: 7000
+    diversity: 6400000
+        
+wandb:
+    name: "lstm_sde"

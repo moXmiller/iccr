@@ -1,0 +1,11 @@
+inherit:
+    - attentiononly.yaml
+
+training:
+    transformation: "mullin"
+    train_steps: 50000
+    save_every_steps: 30000
+    diversity: 32000000
+
+wandb:
+    name: "mullinAO"

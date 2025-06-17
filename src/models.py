@@ -1,14 +1,13 @@
 import torch
 import torch.nn as nn
 from transformers import GPT2Model, GPT2Config
-from tqdm import tqdm
-from sklearn.svm import LinearSVC
-from sklearn.linear_model import LogisticRegression, Lasso
-import warnings
-from sklearn import tree
-import xgboost as xgb
 
-from base_models import NeuralNetwork, ParallelNetworks
+from transformers.models.gpt2.modeling_gpt2 import GPT2Block
+from transformers.utils import logging
+from typing import Optional, Tuple, Union
+
+
+logger = logging.get_logger(__name__)
 
 
 def build_model(conf):
@@ -16,9 +15,82 @@ def build_model(conf):
         model = TransformerModel(
             n_dims=conf.n_dims,
             n_positions=conf.n_positions,
+            n_vars=conf.n_vars,
             n_embd=conf.n_embd,
             n_layer=conf.n_layer,
             n_head=conf.n_head,
+        )
+    elif conf.family == "gpt2_sde":
+        model = SDETransformer(
+            n_dims=conf.n_dims,
+            n_positions=conf.n_positions,
+            n_vars=conf.n_vars,
+            n_embd=conf.n_embd,
+            n_layer=conf.n_layer,
+            n_head=conf.n_head,
+        )
+    elif conf.family == "gpt2_ao":
+        model = AttentionOnlyTransformer(
+            n_dims=conf.n_dims,
+            n_positions=conf.n_positions,
+            n_vars=conf.n_vars,
+            n_embd=conf.n_embd,
+            n_layer=conf.n_layer,
+            n_head=conf.n_head,
+        )
+    elif conf.family == "gpt2_ao_sde":
+        model = SDEAttentionOnlyTransformer(
+            n_dims=conf.n_dims,
+            n_positions=conf.n_positions,
+            n_vars=conf.n_vars,
+            n_embd=conf.n_embd,
+            n_layer=conf.n_layer,
+            n_head=conf.n_head,
+        )
+    elif conf.family == "gpt2_mlp":
+        model = MLPOnlyTransformer(
+            n_dims=conf.n_dims,
+            n_positions=conf.n_positions,
+            n_vars=conf.n_vars,
+            n_embd=conf.n_embd,
+            n_layer=conf.n_layer,
+            n_head=conf.n_head,
+        )
+    elif conf.family == "lstm":
+        model = LSTMModel(
+            n_dims=conf.n_dims,
+            n_embd=conf.n_embd,
+            n_layer=conf.n_layer,
+        )
+    elif conf.family == "lstm_sde":
+        model = LSTMSDEModel(
+            n_dims=conf.n_dims,
+            n_embd=conf.n_embd,
+            n_layer=conf.n_layer,
+        )
+    elif conf.family == "rnn":
+        model = RNNModel(
+            n_dims=conf.n_dims,
+            n_embd=conf.n_embd,
+            n_layer=conf.n_layer,
+        )
+    elif conf.family == "rnn_sde":
+        model = RNNSDEModel(
+            n_dims=conf.n_dims,
+            n_embd=conf.n_embd,
+            n_layer=conf.n_layer,
+        )
+    elif conf.family == "gru":
+        model = GRUModel(
+            n_dims=conf.n_dims,
+            n_embd=conf.n_embd,
+            n_layer=conf.n_layer,
+        )
+    elif conf.family == "gru_sde":
+        model = GRUSDEModel(
+            n_dims=conf.n_dims,
+            n_embd=conf.n_embd,
+            n_layer=conf.n_layer,
         )
     else:
         raise NotImplementedError
@@ -26,62 +98,118 @@ def build_model(conf):
     return model
 
 
-def get_relevant_baselines(task_name):
-    task_to_baselines = {
-        "linear_regression": [
-            (LeastSquaresModel, {}),
-            (NNModel, {"n_neighbors": 3}),
-            (AveragingModel, {}),
-        ],
-        "linear_classification": [
-            (NNModel, {"n_neighbors": 3}),
-            (AveragingModel, {}),
-        ],
-        "sparse_linear_regression": [
-            (LeastSquaresModel, {}),
-            (NNModel, {"n_neighbors": 3}),
-            (AveragingModel, {}),
-        ]
-        + [(LassoModel, {"alpha": alpha}) for alpha in [1, 0.1, 0.01, 0.001, 0.0001]],
-        "relu_2nn_regression": [
-            (LeastSquaresModel, {}),
-            (NNModel, {"n_neighbors": 3}),
-            (AveragingModel, {}),
-            (
-                GDModel,
-                {
-                    "model_class": NeuralNetwork,
-                    "model_class_args": {
-                        "in_size": 20,
-                        "hidden_size": 100,
-                        "out_size": 1,
-                    },
-                    "opt_alg": "adam",
-                    "batch_size": 100,
-                    "lr": 5e-3,
-                    "num_steps": 100,
-                },
-            ),
-        ],
-        "decision_tree": [
-            (LeastSquaresModel, {}),
-            (NNModel, {"n_neighbors": 3}),
-            (DecisionTreeModel, {"max_depth": 4}),
-            (DecisionTreeModel, {"max_depth": None}),
-            (XGBoostModel, {}),
-            (AveragingModel, {}),
-        ],
-    }
+class AttentionOnlyGPT2Block(GPT2Block):
+    def __init__(self, conf, layer_idx = None):
+        super().__init__(conf, layer_idx)
+        self.mlp = None
 
-    models = [model_cls(**kwargs) for model_cls, kwargs in task_to_baselines[task_name]]
-    return models
+    def forward(
+        self,
+        hidden_states: Optional[Tuple[torch.FloatTensor]],
+        layer_past: Optional[Tuple[torch.Tensor]] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = False,
+        output_attentions: Optional[bool] = False,
+    ) -> Union[Tuple[torch.Tensor], Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]]]:
+        residual = hidden_states
+        hidden_states = self.ln_1(hidden_states)
+        attn_outputs = self.attn(
+            hidden_states,
+            layer_past=layer_past,
+            attention_mask=attention_mask,
+            head_mask=head_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+        )
+        attn_output = attn_outputs[0]
+        outputs = attn_outputs[1:]
+        # residual connection
+        hidden_states = attn_output + residual
+
+        if encoder_hidden_states is not None:
+            if not hasattr(self, "crossattention"):
+                raise ValueError(
+                    f"If `encoder_hidden_states` are passed, {self} has to be instantiated with "
+                    "cross-attention layers by setting `config.add_cross_attention=True`"
+                )
+            residual = hidden_states
+            hidden_states = self.ln_cross_attn(hidden_states)
+            cross_attn_outputs = self.crossattention(
+                hidden_states,
+                attention_mask=attention_mask,
+                head_mask=head_mask,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+                output_attentions=output_attentions,
+            )
+            attn_output = cross_attn_outputs[0]
+            # residual connection
+            hidden_states = residual + attn_output
+            outputs = outputs + cross_attn_outputs[2:]
+
+        residual = hidden_states
+        hidden_states = self.ln_2(hidden_states)
+        # skip MLP
+        # residual connection
+        hidden_states = residual + hidden_states
+
+        if use_cache:
+            outputs = (hidden_states,) + outputs
+        else:
+            outputs = (hidden_states,) + outputs[1:]
+
+        return outputs  # hidden_states, present, (attentions, cross_attentions)
+    
+
+class MLPOnlyGPT2Block(GPT2Block):
+    def __init__(self, conf, layer_idx = None):
+        super().__init__(conf, layer_idx)
+        self.attn = None
+    
+    def forward(
+        self,
+        hidden_states: Optional[Tuple[torch.FloatTensor]],
+        layer_past: Optional[Tuple[torch.Tensor]] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        use_cache: Optional[bool] = False,
+        output_attentions: Optional[bool] = False,
+    ) -> Union[Tuple[torch.Tensor], Optional[Tuple[torch.Tensor, Tuple[torch.FloatTensor, ...]]]]:
+        residual = hidden_states
+        hidden_states = self.ln_1(hidden_states)
+        feed_forward_hidden_states = self.mlp(hidden_states)
+        
+        # residual connection
+        # layer-norm is at beginning of block and after processing entire block
+        hidden_states = residual + feed_forward_hidden_states
+
+        outputs = (hidden_states,)
+
+        return outputs  # hidden_states, present, (attentions, cross_attentions)
+
+
+class AttentionOnlyGPT2Model(GPT2Model):
+    def __init__(self, conf):
+        super().__init__(conf)
+        self.h = nn.ModuleList([AttentionOnlyGPT2Block(conf, layer_idx=i) for i in range(conf.num_hidden_layers)])
+
+
+class MLPOnlyGPT2Model(GPT2Model):
+    def __init__(self, conf):
+        super().__init__(conf)
+        self.h = nn.ModuleList([MLPOnlyGPT2Block(conf, layer_idx=i) for i in range(conf.num_hidden_layers)])
 
 
 class TransformerModel(nn.Module):
-    def __init__(self, n_dims, n_positions, n_embd=128, n_layer=12, n_head=4):
+    def __init__(self, n_dims, n_positions, n_vars, n_embd=128, n_layer=12, n_head=4):
         super(TransformerModel, self).__init__()
         configuration = GPT2Config(
-            n_positions=2 * n_positions,
+            n_positions= (n_positions + 1) * n_vars + 1,    # (n_positions + 1) as we only have one counterfactual example, + 1 for index token Z
             n_embd=n_embd,
             n_layer=n_layer,
             n_head=n_head,
@@ -92,386 +220,319 @@ class TransformerModel(nn.Module):
         )
         self.name = f"gpt2_embd={n_embd}_layer={n_layer}_head={n_head}"
 
+        self.n_embd = n_embd
         self.n_positions = n_positions
+        self.n_vars = n_vars
         self.n_dims = n_dims
+        self.o_dims = n_dims
         self._read_in = nn.Linear(n_dims, n_embd)
         self._backbone = GPT2Model(configuration)
-        self._read_out = nn.Linear(n_embd, 1)
+        self._read_out = nn.Linear(n_embd, n_dims)
 
-    @staticmethod
-    def _combine(xs_b, ys_b):
-        """Interleaves the x's and the y's into a single sequence."""
-        bsize, points, dim = xs_b.shape
-        ys_b_wide = torch.cat(
-            (
-                ys_b.view(bsize, points, 1),
-                torch.zeros(bsize, points, dim - 1, device=ys_b.device),
-            ),
-            axis=2,
+    def forward(self, data, o_vars = None, inds = None, output_attentions=False, output_hidden_states=False):
+        """
+        o_vars:         number of variables used at current iteration: curriculum.n_vars_truncated          <= n_vars
+        o_points:       number of in-context examples at current iteration: curriculum.n_points_truncated   <= n_points
+        o_positions:    number of total data points (positions) at current iteration                        <= n_positions
+                        o_positions = (o_points + 1) * o_vars + 1
+        """
+        if output_attentions and output_hidden_states: raise NotImplementedError
+
+        if o_vars == None: o_vars = self.n_vars
+        if inds is not None: raise NotImplementedError        
+
+        if self.n_dims != self.n_embd: embeds = self._read_in(data)
+        else: embeds = data
+        if output_attentions or output_hidden_states:
+            outputs = self._backbone(inputs_embeds = embeds,
+                                     output_attentions=output_attentions, 
+                                     output_hidden_states = output_hidden_states)
+            output = outputs.last_hidden_state
+            attentions = outputs.attentions if output_attentions else None
+            hidden_states = outputs.hidden_states if output_hidden_states else None
+        else: output = self._backbone(inputs_embeds=embeds).last_hidden_state
+        if self.n_dims != self.n_embd: prediction = self._read_out(output)
+        else: prediction = output
+        
+        pred = prediction[:, -2, :]
+        gt = data[:, -1, :]
+
+        if output_attentions: return pred, gt, attentions
+        elif output_hidden_states: return pred, gt, hidden_states, self._read_out
+        else: return pred, gt
+
+
+class SDETransformer(TransformerModel):
+    def __init__(self, n_dims, n_positions, n_vars, n_embd=128, n_layer=12, n_head=4):
+        super(TransformerModel, self).__init__()
+        configuration = GPT2Config(
+            n_positions= 2 * n_positions * n_vars + 1,   # 2 * for counterfactual
+            n_embd=n_embd,
+            n_layer=n_layer,
+            n_head=n_head,
+            resid_pdrop=0.0,
+            embd_pdrop=0.0,
+            attn_pdrop=0.0,
+            use_cache=False,
         )
-        zs = torch.stack((xs_b, ys_b_wide), dim=2)
-        zs = zs.view(bsize, 2 * points, dim)
-        return zs
+        self.name = f"gpt2_sde_embd={n_embd}_layer={n_layer}_head={n_head}"
 
-    def forward(self, xs, ys, inds=None):
-        if inds is None:
-            inds = torch.arange(ys.shape[1])
-        else:
-            inds = torch.tensor(inds)
-            if max(inds) >= ys.shape[1] or min(inds) < 0:
-                raise ValueError("inds contain indices where xs and ys are not defined")
-        zs = self._combine(xs, ys)
-        embeds = self._read_in(zs)
-        output = self._backbone(inputs_embeds=embeds).last_hidden_state
+        self.n_positions = n_positions
+        self.n_vars = n_vars
+        self.n_dims = n_dims
+        self.o_dims = n_dims
+        self._read_in = nn.Linear(n_dims, n_embd)
+        self._backbone = GPT2Model(configuration)
+        self._read_out = nn.Linear(n_embd, n_dims)
+
+    def forward(self, data, o_vars = None, inds = None, output_attentions = False):
+        """
+        o_vars:         number of variables used at current iteration: curriculum.n_vars_truncated          <= n_vars
+        o_points:       number of in-context examples at current iteration: curriculum.n_points_truncated   <= n_points
+        """
+        if o_vars == None: o_vars = self.n_vars
+        if inds is not None: raise NotImplementedError
+
+        _, o_positions, _ = data.shape
+
+        # block setup obs, obs, ..., obs, cf, cf, ..., cf
+        assert ((o_positions - 1) / (2 * o_vars)).is_integer()
+        o_points = int((o_positions - 1) / (2 * o_vars))
+        gt_inds = torch.arange(o_points * o_vars + 1 + o_vars, o_positions)
+        pred_inds = gt_inds - 1
+        
+        embeds = self._read_in(data)
+        if output_attentions:
+            outputs = self._backbone(inputs_embeds = embeds,
+                                     output_attentions=output_attentions)
+            output = outputs.last_hidden_state
+            attentions = outputs.attentions if output_attentions else None
+        else: output = self._backbone(inputs_embeds=embeds).last_hidden_state
         prediction = self._read_out(output)
-        return prediction[:, ::2, 0][:, inds]  # predict only on xs
-
-
-class NNModel:
-    def __init__(self, n_neighbors, weights="uniform"):
-        # should we be picking k optimally
-        self.n_neighbors = n_neighbors
-        self.weights = weights
-        self.name = f"NN_n={n_neighbors}_{weights}"
-
-    def __call__(self, xs, ys, inds=None):
-        if inds is None:
-            inds = range(ys.shape[1])
-        else:
-            if max(inds) >= ys.shape[1] or min(inds) < 0:
-                raise ValueError("inds contain indices where xs and ys are not defined")
-
-        preds = []
-
-        for i in inds:
-            if i == 0:
-                preds.append(torch.zeros_like(ys[:, 0]))  # predict zero for first point
-                continue
-            train_xs, train_ys = xs[:, :i], ys[:, :i]
-            test_x = xs[:, i : i + 1]
-            dist = (train_xs - test_x).square().sum(dim=2).sqrt()
-
-            if self.weights == "uniform":
-                weights = torch.ones_like(dist)
-            else:
-                weights = 1.0 / dist
-                inf_mask = torch.isinf(weights).float()  # deal with exact match
-                inf_row = torch.any(inf_mask, axis=1)
-                weights[inf_row] = inf_mask[inf_row]
-
-            pred = []
-            k = min(i, self.n_neighbors)
-            ranks = dist.argsort()[:, :k]
-            for y, w, n in zip(train_ys, weights, ranks):
-                y, w = y[n], w[n]
-                pred.append((w * y).sum() / w.sum())
-            preds.append(torch.stack(pred))
-
-        return torch.stack(preds, dim=1)
-
-
-# xs and ys should be on cpu for this method. Otherwise the output maybe off in case when train_xs is not full rank due to the implementation of torch.linalg.lstsq.
-class LeastSquaresModel:
-    def __init__(self, driver=None):
-        self.driver = driver
-        self.name = f"OLS_driver={driver}"
-
-    def __call__(self, xs, ys, inds=None):
-        xs, ys = xs.cpu(), ys.cpu()
-        if inds is None:
-            inds = range(ys.shape[1])
-        else:
-            if max(inds) >= ys.shape[1] or min(inds) < 0:
-                raise ValueError("inds contain indices where xs and ys are not defined")
-
-        preds = []
-
-        for i in inds:
-            if i == 0:
-                preds.append(torch.zeros_like(ys[:, 0]))  # predict zero for first point
-                continue
-            train_xs, train_ys = xs[:, :i], ys[:, :i]
-            test_x = xs[:, i : i + 1]
-
-            ws, _, _, _ = torch.linalg.lstsq(
-                train_xs, train_ys.unsqueeze(2), driver=self.driver
-            )
-
-            pred = test_x @ ws
-            preds.append(pred[:, 0, 0])
-
-        return torch.stack(preds, dim=1)
-
-
-class AveragingModel:
-    def __init__(self):
-        self.name = "averaging"
-
-    def __call__(self, xs, ys, inds=None):
-        if inds is None:
-            inds = range(ys.shape[1])
-        else:
-            if max(inds) >= ys.shape[1] or min(inds) < 0:
-                raise ValueError("inds contain indices where xs and ys are not defined")
-
-        preds = []
-
-        for i in inds:
-            if i == 0:
-                preds.append(torch.zeros_like(ys[:, 0]))  # predict zero for first point
-                continue
-            train_xs, train_ys = xs[:, :i], ys[:, :i]
-            test_x = xs[:, i : i + 1]
-
-            train_zs = train_xs * train_ys.unsqueeze(dim=-1)
-            w_p = train_zs.mean(dim=1).unsqueeze(dim=-1)
-            pred = test_x @ w_p
-            preds.append(pred[:, 0, 0])
-
-        return torch.stack(preds, dim=1)
-
-
-# Lasso regression (for sparse linear regression).
-# Seems to take more time as we decrease alpha.
-class LassoModel:
-    def __init__(self, alpha, max_iter=100000):
-        # the l1 regularizer gets multiplied by alpha.
-        self.alpha = alpha
-        self.max_iter = max_iter
-        self.name = f"lasso_alpha={alpha}_max_iter={max_iter}"
-
-    # inds is a list containing indices where we want the prediction.
-    # prediction made at all indices by default.
-    def __call__(self, xs, ys, inds=None):
-        xs, ys = xs.cpu(), ys.cpu()
-
-        if inds is None:
-            inds = range(ys.shape[1])
-        else:
-            if max(inds) >= ys.shape[1] or min(inds) < 0:
-                raise ValueError("inds contain indices where xs and ys are not defined")
-
-        preds = []  # predict one for first point
-
-        # i: loop over num_points
-        # j: loop over bsize
-        for i in inds:
-            pred = torch.zeros_like(ys[:, 0])
-
-            if i > 0:
-                pred = torch.zeros_like(ys[:, 0])
-                for j in range(ys.shape[0]):
-                    train_xs, train_ys = xs[j, :i], ys[j, :i]
-
-                    # If all points till now have the same label, predict that label.
-
-                    clf = Lasso(
-                        alpha=self.alpha, fit_intercept=False, max_iter=self.max_iter
-                    )
-
-                    # Check for convergence.
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings("error")
-                        try:
-                            clf.fit(train_xs, train_ys)
-                        except Warning:
-                            print(f"lasso convergence warning at i={i}, j={j}.")
-                            raise
-
-                    w_pred = torch.from_numpy(clf.coef_).unsqueeze(1)
-
-                    test_x = xs[j, i : i + 1]
-                    y_pred = (test_x @ w_pred.float()).squeeze(1)
-                    pred[j] = y_pred[0]
-
-            preds.append(pred)
-
-        return torch.stack(preds, dim=1)
-
-
-# Gradient Descent and variants.
-# Example usage: gd_model = GDModel(NeuralNetwork, {'in_size': 50, 'hidden_size':400, 'out_size' :1}, opt_alg = 'adam', batch_size = 100, lr = 5e-3, num_steps = 200)
-class GDModel:
-    def __init__(
-        self,
-        model_class,
-        model_class_args,
-        opt_alg="sgd",
-        batch_size=1,
-        num_steps=1000,
-        lr=1e-3,
-        loss_name="squared",
-    ):
-        # model_class: torch.nn model class
-        # model_class_args: a dict containing arguments for model_class
-        # opt_alg can be 'sgd' or 'adam'
-        # verbose: whether to print the progress or not
-        # batch_size: batch size for sgd
-        self.model_class = model_class
-        self.model_class_args = model_class_args
-        self.opt_alg = opt_alg
-        self.lr = lr
-        self.batch_size = batch_size
-        self.num_steps = num_steps
-        self.loss_name = loss_name
-
-        self.name = f"gd_model_class={model_class}_model_class_args={model_class_args}_opt_alg={opt_alg}_lr={lr}_batch_size={batch_size}_num_steps={num_steps}_loss_name={loss_name}"
-
-    def __call__(self, xs, ys, inds=None, verbose=False, print_step=100):
-        # inds is a list containing indices where we want the prediction.
-        # prediction made at all indices by default.
-        # xs: bsize X npoints X ndim.
-        # ys: bsize X npoints.
-        xs, ys = xs.cuda(), ys.cuda()
-
-        if inds is None:
-            inds = range(ys.shape[1])
-        else:
-            if max(inds) >= ys.shape[1] or min(inds) < 0:
-                raise ValueError("inds contain indices where xs and ys are not defined")
-
-        preds = []  # predict one for first point
-
-        # i: loop over num_points
-        for i in tqdm(inds):
-            pred = torch.zeros_like(ys[:, 0])
-            model = ParallelNetworks(
-                ys.shape[0], self.model_class, **self.model_class_args
-            )
-            model.cuda()
-            if i > 0:
-                pred = torch.zeros_like(ys[:, 0])
-
-                train_xs, train_ys = xs[:, :i], ys[:, :i]
-                test_xs, test_ys = xs[:, i : i + 1], ys[:, i : i + 1]
-
-                if self.opt_alg == "sgd":
-                    optimizer = torch.optim.SGD(model.parameters(), lr=self.lr)
-                elif self.opt_alg == "adam":
-                    optimizer = torch.optim.Adam(model.parameters(), lr=self.lr)
-                else:
-                    raise NotImplementedError(f"{self.opt_alg} not implemented.")
-
-                if self.loss_name == "squared":
-                    loss_criterion = nn.MSELoss()
-                else:
-                    raise NotImplementedError(f"{self.loss_name} not implemented.")
-
-                # Training loop
-                for j in range(self.num_steps):
-
-                    # Prepare batch
-                    mask = torch.zeros(i).bool()
-                    perm = torch.randperm(i)
-                    mask[perm[: self.batch_size]] = True
-                    train_xs_cur, train_ys_cur = train_xs[:, mask, :], train_ys[:, mask]
-
-                    if verbose and j % print_step == 0:
-                        model.eval()
-                        with torch.no_grad():
-                            outputs = model(train_xs_cur)
-                            loss = loss_criterion(
-                                outputs[:, :, 0], train_ys_cur
-                            ).detach()
-                            outputs_test = model(test_xs)
-                            test_loss = loss_criterion(
-                                outputs_test[:, :, 0], test_ys
-                            ).detach()
-                            print(
-                                f"ind:{i},step:{j}, train_loss:{loss.item()}, test_loss:{test_loss.item()}"
-                            )
-
-                    optimizer.zero_grad()
-
-                    model.train()
-                    outputs = model(train_xs_cur)
-                    loss = loss_criterion(outputs[:, :, 0], train_ys_cur)
-                    loss.backward()
-                    optimizer.step()
-
-                model.eval()
-                pred = model(test_xs).detach()
-
-                assert pred.shape[1] == 1 and pred.shape[2] == 1
-                pred = pred[:, 0, 0]
-
-            preds.append(pred)
-
-        return torch.stack(preds, dim=1)
-
-
-class DecisionTreeModel:
-    def __init__(self, max_depth=None):
-        self.max_depth = max_depth
-        self.name = f"decision_tree_max_depth={max_depth}"
-
-    # inds is a list containing indices where we want the prediction.
-    # prediction made at all indices by default.
-    def __call__(self, xs, ys, inds=None):
-        xs, ys = xs.cpu(), ys.cpu()
-
-        if inds is None:
-            inds = range(ys.shape[1])
-        else:
-            if max(inds) >= ys.shape[1] or min(inds) < 0:
-                raise ValueError("inds contain indices where xs and ys are not defined")
-
-        preds = []
-
-        # i: loop over num_points
-        # j: loop over bsize
-        for i in inds:
-            pred = torch.zeros_like(ys[:, 0])
-
-            if i > 0:
-                pred = torch.zeros_like(ys[:, 0])
-                for j in range(ys.shape[0]):
-                    train_xs, train_ys = xs[j, :i], ys[j, :i]
-
-                    clf = tree.DecisionTreeRegressor(max_depth=self.max_depth)
-                    clf = clf.fit(train_xs, train_ys)
-                    test_x = xs[j, i : i + 1]
-                    y_pred = clf.predict(test_x)
-                    pred[j] = y_pred[0]
-
-            preds.append(pred)
-
-        return torch.stack(preds, dim=1)
-
-
-class XGBoostModel:
-    def __init__(self):
-        self.name = "xgboost"
-
-    # inds is a list containing indices where we want the prediction.
-    # prediction made at all indices by default.
-    def __call__(self, xs, ys, inds=None):
-        xs, ys = xs.cpu(), ys.cpu()
-
-        if inds is None:
-            inds = range(ys.shape[1])
-        else:
-            if max(inds) >= ys.shape[1] or min(inds) < 0:
-                raise ValueError("inds contain indices where xs and ys are not defined")
-
-        preds = []
-
-        # i: loop over num_points
-        # j: loop over bsize
-        for i in tqdm(inds):
-            pred = torch.zeros_like(ys[:, 0])
-            if i > 0:
-                pred = torch.zeros_like(ys[:, 0])
-                for j in range(ys.shape[0]):
-                    train_xs, train_ys = xs[j, :i], ys[j, :i]
-
-                    clf = xgb.XGBRegressor()
-
-                    clf = clf.fit(train_xs, train_ys)
-                    test_x = xs[j, i : i + 1]
-                    y_pred = clf.predict(test_x)
-                    pred[j] = y_pred[0].item()
-
-            preds.append(pred)
-
-        return torch.stack(preds, dim=1)
+        
+        pred = prediction[:, pred_inds, :]
+        gt = data[:, gt_inds, :]
+
+        if output_attentions: return pred, gt, attentions
+        else: return pred, gt
+
+
+class AttentionOnlyTransformer(TransformerModel):
+    def __init__(self, n_dims, n_positions, n_vars, n_embd=128, n_layer=12, n_head=4):
+        super(TransformerModel, self).__init__()
+        configuration = GPT2Config(
+            n_positions= (n_positions + 1) * n_vars + 1,
+            n_embd=n_embd,
+            n_layer=n_layer,
+            n_head=n_head,
+            resid_pdrop=0.0,
+            embd_pdrop=0.0,
+            attn_pdrop=0.0,
+            use_cache=False,
+        )
+        self.name = f"gpt2_ao_embd={n_embd}_layer={n_layer}_head={n_head}"
+
+        self.n_positions = n_positions
+        self.n_vars = n_vars
+        self.n_dims = n_dims
+        self.o_dims = n_dims
+        self.n_embd = n_embd
+        self._read_in = nn.Linear(n_dims, n_embd)
+        self._backbone = AttentionOnlyGPT2Model(configuration)     # Attention-only GPT2
+        self._read_out = nn.Linear(n_embd, n_dims)
+
+
+class SDEAttentionOnlyTransformer(SDETransformer):
+    def __init__(self, n_dims, n_positions, n_vars, n_embd=128, n_layer=12, n_head=4):
+        super(SDETransformer, self).__init__(n_dims = n_dims, n_positions = n_positions, n_vars = n_vars)
+        configuration = GPT2Config(
+            n_positions= 2 * n_positions * n_vars + 1,
+            n_embd=n_embd,
+            n_layer=n_layer,
+            n_head=n_head,
+            resid_pdrop=0.0,
+            embd_pdrop=0.0,
+            attn_pdrop=0.0,
+            use_cache=False,
+        )
+        self.name = f"gpt2_ao_sde_embd={n_embd}_layer={n_layer}_head={n_head}"
+
+        self.n_positions = n_positions
+        self.n_vars = n_vars
+        self.n_dims = n_dims
+        self.o_dims = n_dims
+        self.n_embd = n_embd
+        self._read_in = nn.Linear(n_dims, n_embd)
+        self._backbone = AttentionOnlyGPT2Model(configuration)     # Attention-only GPT2
+        self._read_out = nn.Linear(n_embd, n_dims)
+        
+
+class MLPOnlyTransformer(TransformerModel):
+    def __init__(self, n_dims, n_positions, n_vars, n_embd=128, n_layer=12, n_head=4):
+        super(TransformerModel, self).__init__()
+        configuration = GPT2Config(
+            n_positions= (n_positions + 1) * n_vars + 1,
+            n_embd=n_embd,
+            n_layer=n_layer,
+            n_head=n_head,
+            resid_pdrop=0.0,
+            embd_pdrop=0.0,
+            attn_pdrop=0.0,
+            use_cache=False,
+        )
+        self.name = f"gpt2_mlp_embd={n_embd}_layer={n_layer}"
+
+        self.n_positions = n_positions
+        self.n_vars = n_vars
+        self.n_dims = n_dims
+        self.o_dims = n_dims
+        self.n_embd = n_embd
+        self._read_in = nn.Linear(n_dims, n_embd)
+        self._backbone = MLPOnlyGPT2Model(configuration)
+        self._read_out = nn.Linear(n_embd, n_dims)
+
+
+class LSTMModel(nn.Module):
+    def __init__(self, n_dims, n_embd, n_layer):
+        super(LSTMModel, self).__init__()
+        self.n_embd = n_embd
+        self.n_layer = n_layer
+        self.n_dims = n_dims
+
+        self.name = f"lstm_embd={n_embd}_layer={n_layer}"
+
+        self._backbone = nn.LSTM(
+            input_size=n_dims,
+            hidden_size=self.n_embd,
+            num_layers=self.n_layer,
+            batch_first=True,
+            dropout=0.0,        # as we have fresh data every iteration
+            bidirectional=False,
+        )
+        self._read_out = nn.Linear(self.n_embd, n_dims)
+
+
+    def forward(self, data, o_vars):
+        h0 = torch.zeros(self.n_layer, data.size(0), self.n_embd).to(data.device)
+        c0 = torch.zeros(self.n_layer, data.size(0), self.n_embd).to(data.device)
+
+        out, _ = self._backbone(data[:, :-1, :], (h0, c0))
+        pred = self._read_out(out[:, -1, :])
+        gt = data[:, -1, :]
+        
+        return pred, gt
+    
+
+class LSTMSDEModel(LSTMModel):
+    def forward(self, data, o_vars):
+        n_thetas, o_positions, _ = data.shape
+
+        assert ((o_positions - 1) / (2 * o_vars)).is_integer()
+        o_points = int((o_positions - 1) / (2 * o_vars))
+        gt_inds = torch.arange(o_points * o_vars + 1 + o_vars, o_positions)
+        pred_inds = gt_inds - 1
+
+        h0 = torch.zeros(self.n_layer, n_thetas, self.n_embd).to(data.device)
+        c0 = torch.zeros(self.n_layer, n_thetas, self.n_embd).to(data.device)
+
+        out, _ = self._backbone(data, (h0, c0))
+        pred = self._read_out(out[:, pred_inds, :])
+        gt = data[:, gt_inds, :]
+        
+        return pred, gt
+    
+
+class RNNModel(nn.Module):
+    def __init__(self, n_dims, n_embd, n_layer):
+        super(RNNModel, self).__init__()
+        self.name = f"rnn_embd={n_embd}_layer={n_layer}"
+
+        self.n_embd = n_embd
+        self.n_layer = n_layer
+        self.n_dims = n_dims
+
+        self._backbone = nn.RNN(
+            input_size=n_dims,
+            hidden_size=self.n_embd,
+            num_layers=n_layer,
+            batch_first=True,
+            dropout=0.0,
+            bidirectional=False,
+        )
+        
+        self._read_out = nn.Linear(self.n_embd, n_dims)
+
+    def forward(self, data, o_vars = None, output_hidden_states=False):
+        h0 = torch.zeros(self.n_layer, data.size(0), self.n_embd).to(data.device)
+        
+        out, _ = self._backbone(data[:, :-1, :], h0)
+        pred = self._read_out(out[:, -1, :])
+        gt = data[:, -1, :]
+        
+        return pred, gt
+
+
+class RNNSDEModel(RNNModel):
+    def forward(self, data, o_vars = None, output_hidden_states=False):
+        n_thetas, o_positions, _ = data.shape
+        assert ((o_positions - 1) / (2 * o_vars)).is_integer()
+        o_points = int((o_positions - 1) / (2 * o_vars))
+        gt_inds = torch.arange(o_points * o_vars + 1 + o_vars, o_positions)
+        pred_inds = gt_inds - 1
+
+        h0 = torch.zeros(self.n_layer, n_thetas, self.n_embd).to(data.device)
+        
+        out, _ = self._backbone(data, h0)
+        pred = self._read_out(out[:, pred_inds, :])
+        gt = data[:, gt_inds, :]
+        
+        return pred, gt
+
+
+class GRUModel(nn.Module):
+    def __init__(self, n_dims, n_embd, n_layer):
+        super(GRUModel, self).__init__()
+
+        self.name = f"rnn_embd={n_embd}_layer={n_layer}"
+
+        self.n_embd = n_embd
+        self.n_layer = n_layer
+        self.n_dims = n_dims
+
+        self._backbone = nn.GRU(
+            input_size = n_dims,
+            hidden_size=self.n_embd,
+            num_layers=self.n_layer,
+            batch_first=True,
+            dropout=0.0,
+            bidirectional=False,
+        )
+
+        self._read_out = nn.Linear(self.n_embd, self.n_dims)
+
+    def forward(self, data, o_vars):
+        h0 = torch.zeros(self.n_layer, data.size(0), self.n_embd).to(data.device)
+
+        out, _ = self._backbone(data[:, :-1, :], h0)
+        pred = self._read_out(out[:, -1, :])
+        gt = data[:, -1, :]
+
+        return pred, gt
+
+
+class GRUSDEModel(GRUModel):
+    def forward(self, data, o_vars):
+        n_thetas, o_positions, _ = data.shape
+
+        assert ((o_positions - 1) / (2 * o_vars)).is_integer()
+        o_points = int((o_positions - 1) / (2 * o_vars))
+        gt_inds = torch.arange(o_points * o_vars + 1 + o_vars, o_positions)
+        pred_inds = gt_inds - 1
+
+        h0 = torch.zeros(self.n_layer, n_thetas, self.n_embd).to(data.device)
+
+        out, _ = self._backbone(data, h0)
+        pred = self._read_out(out[:, pred_inds, :])
+        gt = data[:, gt_inds, :]
+
+        return pred, gt

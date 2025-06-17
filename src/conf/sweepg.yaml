@@ -1,0 +1,9 @@
+inherit:
+    - attentiononly.yaml
+
+model:
+    n_layer: 4
+    n_head: 2
+
+wandb:
+    name: "4l_2h_ao"

@@ -1,0 +1,8 @@
+inherit:
+    - one_head.yaml
+
+training:
+    transformation: "tanh"
+
+wandb:
+    name: "tanh"

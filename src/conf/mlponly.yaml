@@ -1,0 +1,8 @@
+inherit:
+    - one_head.yaml
+
+model:
+    family: "gpt2_mlp"
+
+wandb:
+    name: "counterfactual_regression_mlp_only"

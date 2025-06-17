@@ -1,0 +1,17 @@
+inherit:
+    - counterfactual.yaml
+
+model:
+    family: "gpt2_sde"
+    n_positions: 60
+    n_layer: 8
+    n_head: 1
+
+training:
+    data: "sde"
+    train_steps: 10000
+    save_every_steps: 7000
+    diversity: 6400000
+        
+wandb:
+    name: "sde_8l"

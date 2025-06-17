@@ -1,0 +1,14 @@
+inherit:
+    - rnn.yaml
+
+model:
+    family: "rnn_sde"
+
+training:
+    data: "sde"
+    train_steps: 10000
+    save_every_steps: 7000
+    diversity: 6400000
+        
+wandb:
+    name: "rnn_sde"

@@ -1,0 +1,36 @@
+inherit: 
+    - base.yaml
+
+model:
+    n_dims: 5           # similar to max_o_dims for max_o_dims the maximal o_dims dimension of the observational dataset
+    n_positions: 50
+    n_vars: 2
+
+training:
+    task: counterfactual_regression
+    batch_size: 64
+    data_kwargs: {"dag_type": "only_parent"} # data_kwargs needed
+    train_steps: 200000
+    keep_every_steps: 150000
+    eval_steps: 1000
+    curriculum:
+        dims:
+            start: 5    # this is what we call curriculum.n_dims_truncated throughout
+            end: 5      # similar to max_o_dims for max_o_dims the maximal o_dims dimension of the observational dataset
+            inc: 1      # we only use fixed variable size of dimension 5
+            interval: 2000
+        points:
+            start: 1
+            end: 50
+            inc: 2
+            interval: 2000
+        vars:           # curriculum learning on DAG complexity: not required for this project
+            start: 2    # binary DAG
+            end: 2
+            inc: 1
+            interval: 8000
+
+out_dir: "..models/neurips"
+
+wandb:
+    name: "counterfactual_regression"

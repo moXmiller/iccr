@@ -1,0 +1,8 @@
+inherit:
+    - counterfactual.yaml
+
+training:
+    data_kwargs: {"dag_type": "any"} # data_kwargs needed
+
+wandb:
+    name: "any_standard"

@@ -1,0 +1,9 @@
+inherit:
+    - attentiononly.yaml
+
+training:
+    train_steps: 50000
+    diversity: 32000000
+
+wandb:
+    name: "AO_50000"
