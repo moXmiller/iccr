@@ -1,9 +1,18 @@
 inherit:
-    - attentiononly.yaml
+    - counterfactual.yaml
 
 model:
-    n_layer: 4
-    n_head: 2
+    n_dims: 50
+
+training:
+    train_steps: 200000
+    diversity: 1280000000
+    curriculum:
+        dims:
+            start: 50
+            end: 50
+            inc: 1
+            interval: 2000
 
 wandb:
-    name: "4l_2h_ao"
+    name: "cf_E_50"

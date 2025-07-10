@@ -30,7 +30,7 @@ training:
             inc: 1
             interval: 8000
 
-out_dir: "..models/neurips"
+out_dir: "/cluster/scratch/millerm/models_cf/neurips"
 
 wandb:
     name: "counterfactual_regression"

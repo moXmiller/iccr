@@ -1,5 +1,5 @@
 inherit:
-    - attentiononly.yaml
+    - sweepf.yaml
 
 wandb:
-    name: "no_index_token"
+    name: "no_index_ao_E_25"

@@ -1,9 +1,18 @@
 inherit:
     - attentiononly.yaml
 
+model:
+    n_dims: 25
+
 training:
-    train_steps: 50000
-    diversity: 32000000
+    train_steps: 400000
+    diversity: 1280000000
+    curriculum:
+        dims:
+            start: 25
+            end: 25
+            inc: 1
+            interval: 2000
 
 wandb:
-    name: "AO_50000"
+    name: "AO_E_25"

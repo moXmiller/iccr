@@ -4,11 +4,11 @@
 #SBATCH -n 4
 #SBATCH --gpus=rtx_3090:1
 #SBATCH --time=1200
-#SBATCH --job-name=50long
-#SBATCH --output=output_files/21_05_cf_50dimlong.out
+#SBATCH --job-name=ao
+#SBATCH --output=output_files/10_07_ao_e_5.out
 
 python_files_dir="/cluster/home/millerm/cf/garg_cf/src"
-conda_env="/cluster/scratch/millerm/miniconda3_may/envs/icl"
+conda_env="/cluster/scratch/millerm/miniconda3_jul/envs/icl"
 echo "paths read in"
 
 source activate $conda_env
@@ -21,7 +21,7 @@ module load cuda/12.2.1
 echo "modules loaded"
 
 echo "python execution started"
-python3 ${python_files_dir}/train.py --config conf/sweepo.yaml # train.py --config conf/sweepg.yaml # mm_eval.py --model_size eightlayer --ao 1 
+python3 ${python_files_dir}/train.py --config conf/attentiononly.yaml # train.py --config conf/sweepg.yaml # mm_eval.py --model_size eightlayer --ao 1 
 echo "python script executed"
 
 conda deactivate

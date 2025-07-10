@@ -1,8 +1,5 @@
 inherit:
-    - counterfactual.yaml
-
-model:
-    family: "gpt2_ao"
+    - sweepg.yaml
     
 wandb:
-    name: "standard_ao"
+    name: "no_index_cf_E_50"

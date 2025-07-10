@@ -209,6 +209,10 @@ class TransformerModel(nn.Module):
     def __init__(self, n_dims, n_positions, n_vars, n_embd=128, n_layer=12, n_head=4):
         super(TransformerModel, self).__init__()
         configuration = GPT2Config(
+
+            # more complex DAGs
+            # n_positions = 2 * n_positions * n_vars,
+            
             n_positions= (n_positions + 1) * n_vars + 1,    # (n_positions + 1) as we only have one counterfactual example, + 1 for index token Z
             n_embd=n_embd,
             n_layer=n_layer,
@@ -256,6 +260,10 @@ class TransformerModel(nn.Module):
         
         pred = prediction[:, -2, :]
         gt = data[:, -1, :]
+
+        # more complex DAGs
+        # pred = prediction[:, (-o_vars):(-1), :]
+        # gt = data[:, -(o_vars - 1):, :]
 
         if output_attentions: return pred, gt, attentions
         elif output_hidden_states: return pred, gt, hidden_states, self._read_out
@@ -321,7 +329,10 @@ class AttentionOnlyTransformer(TransformerModel):
     def __init__(self, n_dims, n_positions, n_vars, n_embd=128, n_layer=12, n_head=4):
         super(TransformerModel, self).__init__()
         configuration = GPT2Config(
-            n_positions= (n_positions + 1) * n_vars + 1,
+            # more complex DAGs
+            # n_positions = 2 * n_positions * n_vars,
+            
+            n_positions = (n_positions + 1) * n_vars + 1,
             n_embd=n_embd,
             n_layer=n_layer,
             n_head=n_head,

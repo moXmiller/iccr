@@ -56,10 +56,11 @@ training_schema = {
     "data": merge(tstring, allowed(["gaussian", "sde"])),
     "batch_size": merge(tinteger, default(64)),
     "continuation": merge(tinteger, default(0)),
+    "predict_y": merge(tinteger, default(0)),
     "learning_rate": merge(tfloat, default(3e-4)),
     "train_steps": merge(tinteger, default(200000)),
     "eval_steps": merge(tinteger, default(1000)),
-    "diversity": merge(tinteger, default(128000000)),       # 200000 * 64 * 5
+    "diversity": merge(tinteger, default(64000000)),        # 200000 * 64 * 5 # 10.07. changed this as diversity does not increase with number of variables
     "theta_dist": merge(tstring, default("uniform")),
     "transformation": merge(tstring, default("addlin")),    # one of [addlin, mullin, tanh, sigmoid]
     "lamb": merge(tinteger, default(200)),                  # lambda for poisson process in sdes

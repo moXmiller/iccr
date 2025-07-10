@@ -17,9 +17,10 @@ def effective_support_size(n_values, dist = "norm", seed = None, lwr = -6, upr =
     generator.manual_seed(seed)
     if dist == "norm":
         mean, std = 0, np.sqrt(12)
-        values = torch.randn(n_values, generator=generator) * std
-        pdfs = norm.pdf(values, loc = mean, scale = std)
-        weights = torch.tensor(pdfs / sum(pdfs))
+        values = torch.randn(n_values, generator=generator) * std + mean
+        # pdfs = norm.pdf(values, loc = mean, scale = std)
+        # weights = torch.tensor(pdfs / sum(pdfs))
+        weights = torch.full_like(values, 1 / n_values)                    # among all those sampled according to the Gaussian density, we choose all with equal probability
         shannon = - torch.sum(weights * torch.log(weights))
     elif dist == "uniform":
         values = torch.rand(n_values, generator=generator)
@@ -49,7 +50,8 @@ def get_data_sampler(args, o_dims, sampler_seed = 12032025, **kwargs): # args he
     random.seed(sampler_seed)
 
     theta_diversity = args.diversity
-    if theta_diversity >= 12800001: assert theta_diversity == args.train_steps * args.batch_size * o_dims * 2   # 2: n_vars for theta sampling
+    if theta_diversity >= 12800001: assert theta_diversity == args.train_steps * args.batch_size * o_dims # * 2   # 2: n_vars for theta sampling
+    # 10.07. no * 2 n_vars, as we do not have different thetas for different noise terms
     theta_quadruple = direct_thetas(args)
 
     seeds = random.sample(range(args.train_steps * 4), args.train_steps * 4)
@@ -99,24 +101,30 @@ class GaussianSamplerCF(DataSampler):
                 generator = torch.Generator()
                 generator.manual_seed(self.theta_seed)
                 if len(val) < 12800001:
-                    indices = list(torch.utils.data.WeightedRandomSampler(wei, n_thetas * o_vars * self.o_dims, generator=generator))
+                    # indices = list(torch.utils.data.WeightedRandomSampler(wei, n_thetas * o_vars * self.o_dims, generator=generator))
+                    indices = list(torch.utils.data.WeightedRandomSampler(wei, n_thetas * self.o_dims, generator=generator))
                     theta_b = val[indices]
                 else: 
-                    theta_len = n_thetas * o_vars * self.o_dims
+                    # theta_len = n_thetas * o_vars * self.o_dims
+                    theta_len = n_thetas * self.o_dims
                     theta_b = val[range(itr * theta_len, (itr + 1) * theta_len)]
-                theta_b = theta_b.view(n_thetas, 1, o_vars, self.o_dims)
+                # theta_b = theta_b.view(n_thetas, 1, o_vars, self.o_dims)
+                theta_b = theta_b.view(n_thetas, 1, 1, self.o_dims)
 
             elif split == "val": 
                 self.theta_seed = self.eval_seeds[itr]["theta"]
-                theta_b = torch.zeros(n_thetas, 1, o_vars, self.o_dims)
+                # theta_b = torch.zeros(n_thetas, 1, o_vars, self.o_dims)
+                theta_b = torch.zeros(n_thetas, 1, 1, self.o_dims)
                 generator = torch.Generator()
                 generator.manual_seed(self.theta_seed) 
                 if self.dist == "uniform":
-                    raw_theta = torch.rand(n_thetas, 1, o_vars, self.o_dims, generator = generator)
+                    # raw_theta = torch.rand(n_thetas, 1, o_vars, self.o_dims, generator = generator)
+                    raw_theta = torch.rand(n_thetas, 1, 1, self.o_dims, generator = generator)
                     raw_theta = torch.mul(raw_theta, lwr-upr)
                     theta_b = raw_theta.add(upr)
                 elif self.dist == "norm":
-                    raw_theta = torch.randn(n_thetas, 1, o_vars, self.o_dims, generator = generator)
+                    # raw_theta = torch.randn(n_thetas, 1, o_vars, self.o_dims, generator = generator)
+                    raw_theta = torch.randn(n_thetas, 1, 1, self.o_dims, generator = generator)
                     theta_b = torch.mul(raw_theta, np.sqrt(12))
                 else: raise NotImplementedError
 
@@ -155,15 +163,28 @@ class LinearAssignments(GaussianSamplerCF):
     def _sample_weights(self, n_thetas, o_vars, itr = None, split = 'train'):       # sample depending on theta
         theta_b = self.theta_b
         if itr is None:
-            w_b = torch.randn(n_thetas, 1, o_vars, self.o_dims) + theta_b
+            if self.dag_type != "any": w_b = torch.randn(n_thetas, 1, o_vars, self.o_dims) + theta_b
+            else: 
+                ###
+                # t1 = theta_b.unsqueeze(3)
+                # t2 = theta_b.unsqueeze(2)
+                # theta_pairwise = t1 + 0 * t2
+                # theta_long = theta_pairwise.view(n_thetas, 1, o_vars ** 2, o_dims)
+                w_b = torch.randn(n_thetas, 1, o_vars ** 2, self.o_dims) + theta_b
             print("No w seed provided.")
+        
         else:
             if split == "train": self.w_seed = self.seeds[itr]["w"]
             elif split == "val": self.w_seed = self.eval_seeds[itr]["w"]
-            w_b = torch.zeros(n_thetas, 1, o_vars, self.o_dims)
             generator = torch.Generator()
             generator.manual_seed(self.w_seed)
-            w_b = torch.randn(n_thetas, 1, o_vars, self.o_dims, generator=generator) + theta_b
+            if self.dag_type != "any": 
+                ###
+                w_b = torch.zeros(n_thetas, 1, o_vars, self.o_dims)
+                w_b = torch.randn(n_thetas, 1, o_vars, self.o_dims, generator=generator) + theta_b
+            else: 
+                w_b = torch.zeros(n_thetas, 1, o_vars ** 2, self.o_dims)
+                w_b = torch.randn(n_thetas, 1, o_vars ** 2, self.o_dims, generator=generator) + theta_b
         self.w_b = w_b
         return w_b
         
@@ -185,18 +206,23 @@ class LinearAssignments(GaussianSamplerCF):
         
         if self.dag_type == "any":
             pa = {j: [] for j in range(1, o_vars)}
-            num_max_edges = o_vars * (o_vars - 1) / 2
+            num_max_edges = int(o_vars * (o_vars - 1) / 2)
             np.random.seed(self.do_seed)
-            num_edges = np.random.binomial(num_max_edges, 0.5)
-            assigned_edges = 0
-            while assigned_edges < num_edges:
-                j = random.choice(range(1, o_vars))
-                parent = bool(np.random.binomial(1, 1/num_edges))
-                if parent:
-                    parent_idx = random.choice(range(j))
-                    if parent_idx not in pa[j]:
-                        pa[j].append(parent_idx)
-                        assigned_edges += 1
+            num_edges = int(np.random.binomial(num_max_edges, 0.5))
+            edge_indices = random.sample(range(num_max_edges), k = num_edges)
+            start = 0
+            end = 1 # (o_vars - 1)
+            for j in range(1, o_vars):
+                parent_edges = range(start, end)
+                relevant_edges = list(set(edge_indices) & set(parent_edges))
+                if relevant_edges != []:
+                    edges = [r - start for r in relevant_edges]
+                    pa[j].extend(edges)
+                if j < o_vars - 1:
+                    start = end
+                    end += j + 1
+            assert end == num_max_edges
+
             self.pa = pa
             return pa
         else: raise NotImplementedError
@@ -204,7 +230,7 @@ class LinearAssignments(GaussianSamplerCF):
 
     def _compose_dag(self, n_thetas, o_points, o_vars, 
                      counterfactual = False, itr = None, lwr_do = -6, upr_do = 6, 
-                     split = 'train', continuation = False, transformation = "addlin"):
+                     split = 'train', continuation = False, predict_y = False, transformation = "addlin"):
         assert lwr_do != upr_do
         if not continuation: us_b = self._sample_us(n_thetas, o_points, o_vars, itr = itr, split = split)
         # continuation: continuation of the in-context chain instead of starting counterfactual
@@ -213,7 +239,11 @@ class LinearAssignments(GaussianSamplerCF):
         assert (n_thetas, o_points, o_vars, self.o_dims) == us_b.shape
         
         xs_b = torch.zeros_like(us_b)
-        w_b = self._sample_weights(n_thetas, o_vars, itr = itr, split = split)
+        w_b = self._sample_weights(n_thetas, o_vars, itr = itr, split = split)    
+        ### 09.07.
+        # if not counterfactual: w_b = self._sample_weights(n_thetas, o_vars, itr = itr, split = split)
+        # else: w_b = self._sample_weights(n_thetas, o_vars, split = split)
+        ### 09.07.
         if self.dag_type == "only_parent":
             transformations = {
                 'addlin': lambda x, w, u: torch.mul(x, w) + u,
@@ -226,6 +256,9 @@ class LinearAssignments(GaussianSamplerCF):
                 xs_b[:,:,0,:] = us_b[:,:,0,:]
                 for j in range(1, o_vars):
                     xs_b[:,:,j,:] = transformations[transformation](us_b[:,:,0,:], w_b[:,:,j,:], us_b[:,:,j,:])
+                if predict_y:
+                    if split == 'train': self.do_seed = self.seeds[itr]["do"]
+                    elif split == 'val': self.do_seed = self.eval_seeds[itr]["do"]
             else:
                 if itr is None:
                     xs_b[:,:,0,:] = torch.rand(n_thetas, o_points, 1, self.o_dims)[:,:,0]
@@ -277,12 +310,23 @@ class LinearAssignments(GaussianSamplerCF):
         
         # required to implement more complex structural assignments: not relevant for this project
         elif self.dag_type == "any":
+            transformations = {
+                'addlin': lambda x, w, u: torch.sum(torch.mul(x, w), dim = 2) + u,
+                # 'mullin': lambda x, w, u: (3410.4**(-0.5)) * torch.mul(x, w) * u,
+                # 'tanh': lambda x, w, u: torch.tanh((1/13) * (torch.mul(x, w) + u)),
+                # 'sigmoid': lambda x, w, u: 1 / (1 + torch.exp((-1/13)*(torch.mul(x, w) + u))),
+            }
+            if transformation not in transformations: raise ValueError(f"Unknown transformation: {transformation}. Valid options are: {list(transformations.keys())}")
             pa = self._parent_assignment(o_vars, itr = itr, split = split)
             if not counterfactual:
                 xs_b[:,:,0,:] = us_b[:,:,0,:]
                 for j in range(1, o_vars):
                     if pa[j] != []:
-                        xs_b[:,:,j,:] = torch.sum(torch.mul(xs_b[:,:,pa[j],:], w_b[:,:,j,:].unsqueeze(1)), dim = 2) + us_b[:,:,j,:]  
+                        ### transformations
+                        # xs_b[:,:,j,:] = torch.sum(torch.mul(xs_b[:,:,pa[j],:], w_b[:,:,j,:].unsqueeze(1)), dim = 2) + us_b[:,:,j,:]  
+                        # xs_b[:,:,j,:] = transformations[transformation](xs_b[:,:,pa[j],:], w_b[:,:,j,:].unsqueeze(1), us_b[:,:,j,:])
+                        weight_indices = [p * o_vars + j for p in pa[j]]
+                        xs_b[:,:,j,:] = transformations[transformation](xs_b[:,:,pa[j],:], w_b[:, :, weight_indices, :], us_b[:,:,j,:])
                         # we use the weights associated with the child as we have P_{f_j}(theta_j), i.e., the function determining f_j is completely determined by theta_j, in this simple case: beta_j
                     else:
                         xs_b[:,:,j,:] = us_b[:,:,j,:]
@@ -293,8 +337,9 @@ class LinearAssignments(GaussianSamplerCF):
                     xs_b = xs_b.add(upr_do)
                     print(f"No do seed provided.")
                 else:
-                    if split == 'train': self.do_seed = self.seeds[itr]["do"]
-                    elif split == 'val': self.do_seed = self.eval_seeds[itr]["do"]
+                    # if split == 'train': self.do_seed = self.seeds[itr]["do"]
+                    # elif split == 'val': self.do_seed = self.eval_seeds[itr]["do"]
+                    # we already set this during self._parent_assignment()
                     xs_b[:,:,0,:] = torch.zeros(n_thetas, o_points, 1, self.o_dims)[:,:,0]
                     generator = torch.Generator()
                     generator.manual_seed(self.do_seed)
@@ -303,7 +348,9 @@ class LinearAssignments(GaussianSamplerCF):
                     xs_b = xs_b.add(upr_do)
                 for j in range(1, o_vars):
                     if pa[j] != []:
-                        xs_b[:,:,j,:] = torch.sum(torch.mul(xs_b[:,:,pa[j],:], w_b[:,:,j,:].unsqueeze(1)), dim = 2) + us_b[:,:,j,:]  
+                        # xs_b[:,:,j,:] = torch.sum(torch.mul(xs_b[:,:,pa[j],:], w_b[:,:,j,:].unsqueeze(1)), dim = 2) + us_b[:,:,j,:]  
+                        weight_indices = [p * o_vars + j for p in pa[j]]
+                        xs_b[:,:,j,:] = transformations[transformation](xs_b[:,:,pa[j],:], w_b[:, :, weight_indices, :], us_b[:,:,j,:])
                         # we use the weights associated with the child as we have P_{f_j}(theta_j), i.e., the function determining f_j is completely determined by theta_j, in this simple case: beta_j
                     else:
                         xs_b[:,:,j,:] = us_b[:,:,j,:]
@@ -334,27 +381,34 @@ class LinearAssignments(GaussianSamplerCF):
         return us_view
 
 
-    def complete_dataset(self, n_thetas, o_points, o_vars, itr = None, split = 'train', continuation = False, block_setup = True, transformation = "addlin"):
+    def complete_dataset(self, n_thetas, o_points, o_vars, itr = None, split = 'train', continuation = False, block_setup = True, with_delimiter = True, predict_y = False, transformation = "addlin"):
         if continuation: raise NotImplementedError
         _ = self._sample_theta(n_thetas, o_vars, itr = itr, split = split, continuation = continuation)                     # initiate self.theta_b
 
         # alternate observational and counterfactual data points
         if not block_setup:
+            with_delimiter = False # to be deleted # 10.07.
             if continuation: raise NotImplementedError
-            xs = self._compose_dag(n_thetas, o_points, o_vars, itr = itr, split = split, transformation = transformation)   # xs is four-dimensional
-            xs_cf = self._compose_dag(n_thetas, o_points, o_vars, counterfactual = True, itr = itr, split = split, transformation = transformation)
+            xs = self._compose_dag(n_thetas, o_points, o_vars, itr = itr, split = split, transformation = transformation, predict_y = predict_y)   # xs is four-dimensional
+            xs_cf = self._compose_dag(n_thetas, o_points, o_vars, counterfactual = True, itr = itr, split = split, predict_y = predict_y, transformation = transformation)
             xs_concat = torch.concat([xs, xs_cf], dim = 2)                                                                  # concat along o_vars dimension
             data_view = xs_concat.view(n_thetas, 2 * o_vars * o_points, self.o_dims)
 
         # first learn beta in-context and then start counterfactual generation: block setup
         else:
+            assert self.dag_type == "only_parent"
             xs = self._compose_dag(n_thetas, o_points, o_vars, itr = itr, split = split, transformation = transformation)
-            xs_cf = self._compose_dag(n_thetas, o_points, o_vars, itr =itr, split = split, counterfactual=True, transformation = transformation)
+            # 10.07. default set to False
+            if predict_y: xs_cf = self._compose_dag(n_thetas, o_points, o_vars, itr = itr, split = split, transformation = transformation, predict_y = predict_y)
+            # 10.07.
+            else: xs_cf = self._compose_dag(n_thetas, o_points, o_vars, itr =itr, split = split, counterfactual=True, transformation = transformation, predict_y = predict_y)
             delimiter, z_index = self._sample_delimiters(n_thetas, o_points)
             self.z_index = z_index
             xs_cf_sub = xs_cf[:, z_index, :, :]    # extract relevant data
             xs_view = xs.view(n_thetas, o_points * o_vars, self.o_dims)
-            data_view = torch.concat([xs_view, delimiter, xs_cf_sub], dim = 1)
+            if with_delimiter: data_view = torch.concat([xs_view, delimiter, xs_cf_sub], dim = 1) # 09.07.
+            else: data_view = torch.concat([xs_view, xs_cf_sub], dim = 1)
+
         return data_view
 
 if __name__ == "__main__":

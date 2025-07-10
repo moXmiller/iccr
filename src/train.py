@@ -92,12 +92,13 @@ def train(model, args):
                                                 itr = i,
                                                 continuation = continuation,
                                                 block_setup=block_setup,
-                                                transformation=transformation)
+                                                transformation=transformation,
+                                                predict_y = args.training.predict_y)
 
         task = task_sampler(**task_sampler_args)
         
         ess = data_sampler.ess
-
+        
         loss_func = task.get_training_metric()
 
         if dag_type not in ["only_parent", "one_parent", "any"]:
@@ -122,11 +123,25 @@ def train(model, args):
         #     / o_points
         # )
 
-        if i % args.wandb.log_every_steps == 0 and not args.test_run:
+        if dag_type == "only_parent": 
+            z_index = data_sampler.z_index
+            if i % args.wandb.log_every_steps == 0 and not args.test_run:
+                wandb.log(
+                    {
+                        "overall_loss": loss,
+                        # "excess_loss": loss / baseline_loss,
+                        "effective_support_size": ess,
+                        "n_points": o_points,
+                        "z_index": z_index,
+                        "n_dims": curriculum.n_dims_truncated,
+                    },
+                    step=i,
+                )
+
+        elif i % args.wandb.log_every_steps == 0 and not args.test_run:
             wandb.log(
                 {
                     "overall_loss": loss,
-                    # "excess_loss": loss / baseline_loss,
                     "effective_support_size": ess,
                     "n_points": o_points,
                     "n_dims": curriculum.n_dims_truncated,
