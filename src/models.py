@@ -230,6 +230,7 @@ class TransformerModel(nn.Module):
         self.n_dims = n_dims
         self.o_dims = n_dims
         self._read_in = nn.Linear(n_dims, n_embd)
+        self._z_embed = nn.Embedding(n_positions, n_embd) # 17.07. embed Z token
         self._backbone = GPT2Model(configuration)
         self._read_out = nn.Linear(n_embd, n_dims)
 
@@ -245,7 +246,19 @@ class TransformerModel(nn.Module):
         if o_vars == None: o_vars = self.n_vars
         if inds is not None: raise NotImplementedError        
 
-        if self.n_dims != self.n_embd: embeds = self._read_in(data)
+        if self.n_dims != self.n_embd: 
+            icl_data = data[:, :-3, :]
+            z_data = data[:, -3, :]
+            assert torch.equal(z_data, torch.full_like(z_data, z_data[0, 0]))
+            cf_data = data[:, -2:, :]
+
+            icl_embeds = self._read_in(icl_data)
+            z_data_long = z_data[:, 0].unsqueeze(1).to(dtype=torch.long, device=icl_embeds.device)
+            z_embed = self._z_embed(z_data_long)
+            x_embeds = self._read_in(cf_data)
+            embeds = torch.concat([icl_embeds, z_embed, x_embeds], dim = 1).to(device=icl_embeds.device) # all above is 17.07.
+            ####
+            # embeds = self._read_in(data)
         else: embeds = data
         if output_attentions or output_hidden_states:
             outputs = self._backbone(inputs_embeds = embeds,
@@ -259,7 +272,7 @@ class TransformerModel(nn.Module):
         else: prediction = output
         
         pred = prediction[:, -2, :]
-        gt = data[:, -1, :]
+        gt = data[:, -1, :] # modified for 17.07.
 
         # more complex DAGs
         # pred = prediction[:, (-o_vars):(-1), :]
@@ -349,6 +362,7 @@ class AttentionOnlyTransformer(TransformerModel):
         self.o_dims = n_dims
         self.n_embd = n_embd
         self._read_in = nn.Linear(n_dims, n_embd)
+        self._z_embed = nn.Embedding(n_positions, n_embd) # 17.07. embed Z token
         self._backbone = AttentionOnlyGPT2Model(configuration)     # Attention-only GPT2
         self._read_out = nn.Linear(n_embd, n_dims)
 

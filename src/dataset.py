@@ -210,6 +210,7 @@ class LinearAssignments(GaussianSamplerCF):
             np.random.seed(self.do_seed)
             num_edges = int(np.random.binomial(num_max_edges, 0.5))
             edge_indices = random.sample(range(num_max_edges), k = num_edges)
+            
             start = 0
             end = 1 # (o_vars - 1)
             for j in range(1, o_vars):
@@ -224,6 +225,9 @@ class LinearAssignments(GaussianSamplerCF):
             assert end == num_max_edges
 
             self.pa = pa
+            edge_indices.sort()
+            concat_indices = ''.join([str(index + 1) for index in edge_indices]) if edge_indices != [] else 0
+            self.concat_indices = int(concat_indices)
             return pa
         else: raise NotImplementedError
 
@@ -363,7 +367,18 @@ class LinearAssignments(GaussianSamplerCF):
     def _sample_delimiters(self, n_thetas, o_points):
         random.seed(self.do_seed)
         z_index = random.choice(range(o_points))
-        return torch.full((n_thetas, 1, self.o_dims), z_index), z_index
+
+        delimiters = torch.full((n_thetas, 1, self.o_dims), z_index)
+
+        # filled = torch.full((n_thetas, 1, self.o_dims), z_index)
+        # delimiters = 10 * torch.sin(filled) + 1000
+
+        # binary_str = format(z_index, f'0{(self.o_dims)}b')
+        # assert len(binary_str) <= self.o_dims
+        # binary_tensor = torch.tensor([int(b) * (-200) + 100 for b in binary_str], dtype=torch.float32)
+        # delimiters = binary_tensor.view(1, 1, self.o_dims).repeat(n_thetas, 1, 1)
+
+        return delimiters, z_index
 
 
     def _us_dataset(self, n_thetas, o_points, o_vars, itr = None, split = 'train', continuation = False, lwr = -1, upr = 1):
@@ -382,7 +397,7 @@ class LinearAssignments(GaussianSamplerCF):
 
 
     def complete_dataset(self, n_thetas, o_points, o_vars, itr = None, split = 'train', continuation = False, block_setup = True, with_delimiter = True, predict_y = False, transformation = "addlin"):
-        if continuation: raise NotImplementedError
+        if continuation: with_delimiter = False
         _ = self._sample_theta(n_thetas, o_vars, itr = itr, split = split, continuation = continuation)                     # initiate self.theta_b
 
         # alternate observational and counterfactual data points

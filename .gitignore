@@ -34,5 +34,6 @@ src/conf/sweepd.yaml
 src/conf/sweepy.yaml
 src/conf/sweepx.yaml
 src/conf/sweepz.yaml
+src/write_eval.py
 
 src/visualizations

@@ -1,9 +1,7 @@
 inherit:
-    - sweepf.yaml
+    - attentiononly.yaml
 
 training:
-    train_steps: 200000
-    diversity: 640000000
     predict_y: 1
     
 wandb:

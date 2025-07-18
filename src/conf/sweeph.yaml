@@ -1,5 +1,17 @@
 inherit:
     - sweepf.yaml
 
+model:
+    n_dims: 20
+
+training:
+    diversity: 256000000
+    curriculum:
+        dims:
+            start: 20
+            end: 20
+            inc: 1
+            interval: 2000
+
 wandb:
-    name: "different_f_ao_E_25"
+    name: "AO_hw_embeds_E_20"

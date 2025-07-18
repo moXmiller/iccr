@@ -1,11 +1,8 @@
 inherit:
-    - sweepi.yaml
-
-model:
-    n_vars: 4
+    - sweepf.yaml
 
 training:
-    data_kwargs: {"dag_type": "any"}
-
+    continuation: 1
+    
 wandb:
-    name: "ao_complex_dag"
+    name: "AO_E_6_cont_with_plus_1"

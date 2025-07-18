@@ -1,20 +1,8 @@
 inherit:
-    - counterfactual.yaml
-
-model:
-    n_dims: 20
+    - sweeph.yaml
 
 training:
-    train_steps: 200000
-    diversity: 512000000
-    curriculum:
-        dims:
-            start: 20
-            end: 20
-            inc: 1
-            interval: 2000
-
-out_dir: "/cluster/scratch/millerm/models_cf/neurips"
-
+    continuation: 1
+    
 wandb:
-    name: "cf_20_dims_long"
+    name: "AO_E_20_cont_with_plus_1"

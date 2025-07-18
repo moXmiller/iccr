@@ -1,18 +1,17 @@
 inherit:
-    - counterfactual.yaml
+    - sweepf.yaml
 
 model:
-    n_dims: 50
+    n_dims: 5
 
 training:
-    train_steps: 200000
-    diversity: 1280000000
+    diversity: 64000000
     curriculum:
         dims:
-            start: 50
-            end: 50
+            start: 5
+            end: 5
             inc: 1
             interval: 2000
 
 wandb:
-    name: "cf_E_50"
+    name: "AO_hw_embeds_E_5"

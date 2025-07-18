@@ -105,6 +105,12 @@ def train(model, args):
             print("Transformer not defined for this dag_type: modify models.py")
             raise NotImplementedError
         
+        # 17.07.
+        # data_tuple = data[:, :-3, :].cuda(), data[:, -3, :].cuda(), data[:, -2:, :].cuda()
+        # loss, output, gt = train_step(model, data_tuple, o_vars = curriculum.n_vars_truncated,
+        #                               optimizer = optimizer, loss_func = loss_func)
+        ###
+
         loss, output, gt = train_step(model, data.cuda(), o_vars = curriculum.n_vars_truncated,
                                       optimizer = optimizer, loss_func = loss_func)
 

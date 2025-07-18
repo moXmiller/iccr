@@ -12,8 +12,8 @@ print("functions imported")
 parser = argparse.ArgumentParser(description='parser for dataset arguments')
 ### -----------
 parser.add_argument('--o_dims',         type=int, default=5, help="o_dims for dataset setup")
-parser.add_argument('--o_vars',         type=int, default=4, help="o_dims for dataset setup")
-parser.add_argument('--o_points',       type=int, default=5, help="o_dims for dataset setup")
+parser.add_argument('--o_vars',         type=int, default=2, help="o_dims for dataset setup")
+parser.add_argument('--o_points',       type=int, default=40, help="o_dims for dataset setup")
 parser.add_argument('--n_points',       type=int, default=60, help="n_points, max_events for sde dataset setup")
 parser.add_argument('--n_thetas',       type=int, default=2, help="n_thetas for dataset setup")
 parser.add_argument('--batch_size',     type=int, default=64, help="similar to n_thetas")
@@ -27,24 +27,17 @@ parser.add_argument('--train_steps',    type=int, default=10000, help="Number of
 parser.add_argument('--eval_steps',     type=int, default=1000, help="Number of evaluation steps:                      required for eval_seeds_dict")
 parser.add_argument('--transformation', type=str, default="addlin", help="Transformation of complete dataset")
 parser.add_argument('--diversity',      type=int, default=50, help="Number of evaluation steps:                      required for eval_seeds_dict") # 12800000
-parser.add_argument('--theta_dist',     type=str, default="norm", help="distribution of theta: either norm or uniform")
+parser.add_argument('--theta_dist',     type=str, default="uniform", help="distribution of theta: either norm or uniform")
 args = parser.parse_args()
 
-kwargs = {"dag_type": "any"}
-data_sampler = get_data_sampler(args, args.o_dims, **kwargs)
+kwargs = {"dag_type": "only_parent"}
 
-xs = data_sampler.complete_dataset(args.n_thetas, args.o_points, args.o_vars, itr = 2, transformation=args.transformation, predict_y=args.predict_y, block_setup=False)
-# print(data_sampler.theta_quadruple)
+# data_sampler = get_data_sampler(args, args.o_dims, **kwargs)
 
-# print(data_sampler.z_index)
-print(xs.shape)
-print(xs[:, (-4):(-1), :])
-# print("theta", data_sampler.theta_b)
-# print("parents", data_sampler.pa)
-# print("u", data_sampler.us_b)
-# print("w", data_sampler.w_b)
-# print(data_sampler.xs_b)
+# # print(data_sampler.theta_quadruple)
 
+# # for i in tqdm(range(64)):
+# xs = data_sampler.complete_dataset(args.n_thetas, args.o_points, args.o_vars, itr = 0, transformation=args.transformation, predict_y=args.predict_y, block_setup=True)
 
 
 # xs_3 = data_sampler.complete_dataset(args.n_thetas, args.o_points, args.o_vars, itr = 3, transformation=args.transformation)
@@ -63,10 +56,11 @@ print(xs[:, (-4):(-1), :])
 # # print(t3v.unique())
 # # print(xs_3)
 
-# # data_sampler = get_sde_data_sampler(args, args.o_dims)
+data_sampler = get_sde_data_sampler(args, args.o_dims)
 
 # s = datetime.now()
-# # xs_3, ys, ts = data_sampler.complete_sde_dataset(args.n_thetas, args.o_vars, args.lamb, args.max_time, args.n_points, itr = 3, split = "train")
+xs_3, ys, ts = data_sampler.complete_sde_dataset(args.n_thetas, args.o_vars, args.lamb, args.max_time, args.n_points, itr = 3, split = "train")
+print(data_sampler.alpha, data_sampler.beta, data_sampler.gamma, data_sampler.delta, data_sampler.sigma)
 # # xs_3 = data_sampler.complete_sde_dataset(args.n_thetas, args.o_vars, args.lamb, args.max_time, args.n_points, itr = 3, split = "train")
 # a, b, c = xs_3.shape
 # print(xs_3.shape)

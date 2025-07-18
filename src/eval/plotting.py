@@ -23,6 +23,11 @@ def legend_model_names(model_size, ao = 0):
                    "gru": "GRU",
                    "rnn": "Elman RNN",
                    "mlponly": "MLP-Only",
+                   "prediction": "Prediction on Y",
+                   "continuation": "8-layer continuation",
+                   "fiveembeds": "hand-written embeddings, size 5",
+                   "sixembeds": "hand-written embeddings, size 6",
+                   "twentyembeds": "hand-written embeddings, size 20"
                    }
     return model_sizes[model_size]
 
@@ -110,25 +115,52 @@ def plot_mse_with_ci(models: list, n_points=50, savefig_path=None):
     rcParams['font.weight'] = 'bold'
 
     for model_size in models:
-        if model_size == "mlponly": filename = f"mse/context_length_{model_size}.csv"
+        if (model_size == "mlponly") or (model_size == "eightlayer_ao_cont") or (model_size == "predict_y_ao_y"): filename = f"mse/context_length_{model_size}.csv"
         else: filename = f"mse/context_length_{model_size}_ao.csv"
+        if "embeds" in model_size:
+            filename = f"mse/context_length_{model_size}_ao.csv"
+            cnt_file = f"mse/context_length_{model_size}_ao_cont.csv"
+            df_cnt = pd.read_csv(cnt_file)
         df = pd.read_csv(filename)
+        if model_size == "eightlayer_ao_cont": 
+            model_size = "continuation"
+            df["model_size"] = model_size
+        if model_size == "predict_y_ao_y": 
+            model_size = "prediction"
+            df["model_size"] = model_size
 
         for i in range(1, n_points + 1):
             i_str = str(i)
-            if "mlponly" in models and model_size != "mlponly":
+            if ("mlponly" in models and model_size != "mlponly") or model_size in ["eightlayer_new_theta", "continuation", "prediction"]:
                 df_mean = df[(df["model_size"] == model_size) & (df["attention_only"] == True) & (df["stat"] == "mean")]
                 df_q025 = df[(df["model_size"] == model_size) & (df["attention_only"] == True) & (df["stat"] == "q025")]
                 df_q975 = df[(df["model_size"] == model_size) & (df["attention_only"] == True) & (df["stat"] == "q975")]
             
+            elif "embeds" in model_size:
+                df_mean = df[(df["model_size"] == model_size) & (df["attention_only"] == True) & (df["stat"] == "mean")]
+                df_q025 = df[(df["model_size"] == model_size) & (df["attention_only"] == True) & (df["stat"] == "q025")]
+                df_q975 = df[(df["model_size"] == model_size) & (df["attention_only"] == True) & (df["stat"] == "q975")]
+            
+                df_mean_cnt = df_cnt[(df_cnt["model_size"] == model_size) & (df_cnt["attention_only"] == True) & (df_cnt["stat"] == "mean")]
+                df_q025_cnt = df_cnt[(df_cnt["model_size"] == model_size) & (df_cnt["attention_only"] == True) & (df_cnt["stat"] == "q025")]
+                df_q975_cnt = df_cnt[(df_cnt["model_size"] == model_size) & (df_cnt["attention_only"] == True) & (df_cnt["stat"] == "q975")]
+
+                all_data.append({
+                    "Number of in-context examples": int(i_str),
+                    "Model": "continuation",
+                    "In-Context MSE (log)": np.log(df_mean_cnt[i_str].values[0]),
+                    "q025": np.log(df_q025_cnt[i_str].values[0]),
+                    "q975": np.log(df_q975_cnt[i_str].values[0])
+                })
+
             else:
                 df_mean = df[(df["model_size"] == model_size) & (df["attention_only"] == False) & (df["stat"] == "mean")]
                 df_q025 = df[(df["model_size"] == model_size) & (df["attention_only"] == False) & (df["stat"] == "q025")]
                 df_q975 = df[(df["model_size"] == model_size) & (df["attention_only"] == False) & (df["stat"] == "q975")]
 
             model_name = re.sub(r'[_\d]', '', model_size)
-            
-            if "_" in model_size:
+
+            if ("_" in model_size) and "embeds" not in model_size:
                 model_name = model_size.replace(model_size, (re.findall(r"([a-z]+)", model_size)[0]))
 
             if "mlponly" in models and model_size != "mlponly": model_name = legend_model_names(model_name, ao = 1)
@@ -144,8 +176,12 @@ def plot_mse_with_ci(models: list, n_points=50, savefig_path=None):
 
     plot_df = pd.DataFrame(all_data)
 
-    if len(models) == 5: custom_palette = ["#0073E6", "#B51963", "#011638", "#5FAD56", "#F2C14E"]
-    elif len(models) == 4: custom_palette = ["#0073E6", "#B51963", "#5FAD56", "#F2C14E"]
+    if len(models) == 5:    custom_palette = ["#0073E6", "#B51963", "#011638", "#5FAD56", "#F2C14E"]
+    elif len(models) == 4:  custom_palette = ["#0073E6", "#B51963", "#5FAD56", "#F2C14E"]
+    elif len(models) == 3:  custom_palette = ["#0073E6", "#B51963", "#F2C14E"]
+    elif len(models) == 2:  custom_palette = ["#0073E6", "#B51963"]
+    elif "embeds" in model_size:  custom_palette = ["#0073E6", "#B51963"]
+    elif len(models) == 1:  custom_palette = ["#0073E6"]
     else: raise NotImplementedError
     palette = custom_palette + sns.color_palette("husl", max(0, len(plot_df["Model"].unique()) - len(custom_palette)))
 
@@ -521,7 +557,15 @@ if __name__ == "__main__":
     savefig_path="attention"
     if not os.path.exists('../visualizations'):
         os.makedirs('../visualizations')
-    plot_mse_with_ci(models_attention, savefig_path=savefig_path)
+    # plot_mse_with_ci(models_attention, savefig_path=savefig_path)
+    # plot_mse_with_ci(["eightlayer_new_theta", "eightlayer_ao_cont"]) #, "predict_y_ao_y"])
+    
+    savefig_path="handwritten_embeds_E_5"
+    plot_mse_with_ci(["five_embeds"], savefig_path=savefig_path)
+    savefig_path="handwritten_embeds_E_6"
+    plot_mse_with_ci(["six_embeds"], savefig_path=savefig_path)
+    savefig_path="handwritten_embeds_E_20"
+    plot_mse_with_ci(["twenty_embeds"], savefig_path=savefig_path)
     # plot_mse(models_attention, savefig_path=savefig_path)
     # for i in [1, 35, 45]:
     #     plot_mse_vs_ess(context_length=i, savefig_path="ess_both_dist")

@@ -4,8 +4,8 @@
 #SBATCH -n 4
 #SBATCH --gpus=rtx_3090:1
 #SBATCH --time=1200
-#SBATCH --job-name=ao
-#SBATCH --output=output_files/10_07_ao_e_5.out
+#SBATCH --job-name=AO5cnt
+#SBATCH --output=output_files/18_07_handwritten_embeddings_E_5_cont.out
 
 python_files_dir="/cluster/home/millerm/cf/garg_cf/src"
 conda_env="/cluster/scratch/millerm/miniconda3_jul/envs/icl"
@@ -21,7 +21,7 @@ module load cuda/12.2.1
 echo "modules loaded"
 
 echo "python execution started"
-python3 ${python_files_dir}/train.py --config conf/attentiononly.yaml # train.py --config conf/sweepg.yaml # mm_eval.py --model_size eightlayer --ao 1 
+python3 ${python_files_dir}/train.py --config conf/sweepm.yaml # train.py --config conf/sweepg.yaml # mm_eval.py --model_size eightlayer --ao 1 
 echo "python script executed"
 
 conda deactivate
