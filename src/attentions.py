@@ -94,7 +94,7 @@ def retrieve_attentions(layer, head, continuation = False, model_size = "small",
             labels = [[f"X{i}", f"Y{i}"] for i in range(n)] + [["Z"]] + [[f"X{i}CF", f"Y{i}CF"] for i in range(n)]
             labels = sum(labels, [])
             df_att = df_att.set_axis(labels, axis = 1)
-        elif data == "gaussian":
+        elif data == "gaussian" and itr >= 15:
             n = (c-1-2) / 2
             assert n.is_integer()
             n = int(n)
@@ -157,10 +157,14 @@ def construct_heatmap(layer, head, continuation = False, model_size = "small", a
                 print(1, df.iloc[:, 0::2].sum(1).max())
                 print(2, df.iloc[:, 1::2].sum(1).max())
 
-    fig, ax = plt.subplots(figsize=(20, 1))
     sns.set_context("paper", font_scale=1)
 
-    plot_data = df.iloc[100:,:]
+    if itr >= 15: 
+        plot_data = df.iloc[100:,:]
+        fig, ax = plt.subplots(figsize=(20, 1))
+    else: 
+        plot_data = df.iloc[:,:]
+        fig, ax = plt.subplots(figsize=(10, 10))
     cmap = colormap()
     if data == "sde" or conference == "neurips": sns.heatmap(plot_data.iloc[:,:], rasterized=True, cmap=cmap, vmin=0, vmax=1, cbar=False)
     else: sns.heatmap(plot_data.iloc[:,:], rasterized=True, cmap=cmap, cbar = False)
@@ -176,13 +180,13 @@ def construct_heatmap(layer, head, continuation = False, model_size = "small", a
         ax.text(0.9, 0.9, layer_label, transform=ax.transAxes,
                 ha='right', va='bottom', fontsize=22, color=color)
             
-    ax.set_ylabel("")
-    ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=8)
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=0, fontsize=8)
-    # xticks = [[f"X{i}", f"Y{i}"] for i in range(50)] + ["Z"] + ["X_Z"] + ["Y_Z"]
-    # yticks = ["Z"] + ["X_Z"] + ["Y_Z"]
-    # ax.set_yticklabels(yticks)
-    # ax.set_xticklabels(xticks)
+    if itr >= 15:
+        color = colormap(continuous=False)[2]
+        ax.text(0.9, 0.9, "itr" + str(itr), transform=ax.transAxes,
+                    ha='right', va='bottom', fontsize=22, color=color)
+        ax.set_ylabel("")
+        ax.set_yticklabels(ax.get_yticklabels(), rotation=0, fontsize=8)
+        ax.set_xticklabels(ax.get_xticklabels(), rotation=0, fontsize=8)
 
     if not savefig: plt.show()
     else:
@@ -332,6 +336,6 @@ if __name__ == "__main__":
     #         # construct_heatmap(layer = l, head = h, itr = 0, data = "sde", family = "gpt2_ao_sde", ao = 1, only_counterfactual=False, lamb = 40, poisson = 1, n_layer = n_layer, n_head = n_head)
     #         construct_heatmap(l, h, position = -1, n_layer = n_layer, n_head = n_head, o_dims = 1, train_steps = 1000000, itr = 2)
 
-    for itr in range(15):
+    for itr in range(10,102):
         print(itr)
-        construct_heatmap(6, 5, position = -1, n_layer = n_layer, n_head = n_head, o_dims = 1, train_steps = 1000000, itr = itr, savefig=True)
+        construct_heatmap(6, 5, position = -1, n_layer = n_layer, n_head = n_head, o_dims = 1, train_steps = 1000000, itr = itr)
