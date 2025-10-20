@@ -12,16 +12,16 @@ class DataSampler:
         raise NotImplementedError
 
 
-def effective_support_size(n_values, dist = "norm", seed = None, lwr = -6, upr = 6):
+def effective_support_size(n_values, dist = "uniform", seed = None, lwr = -6, upr = 6):
     generator = torch.Generator()
     generator.manual_seed(seed)
     if dist == "norm":
         mean, std = 0, np.sqrt(12)
         values = torch.randn(n_values, generator=generator) * std + mean
-        # pdfs = norm.pdf(values, loc = mean, scale = std)
-        # weights = torch.tensor(pdfs / sum(pdfs))
-        weights = torch.full_like(values, 1 / n_values)                    # among all those sampled according to the Gaussian density, we choose all with equal probability
-        shannon = - torch.sum(weights * torch.log(weights))
+        pdfs = norm.pdf(values, loc = mean, scale = std)
+        shannon_weights = torch.tensor(pdfs / sum(pdfs))
+        weights = torch.full_like(values, 1 / n_values)                         # among all those sampled according to the Gaussian density, we choose all with equal probability
+        shannon = - torch.sum(shannon_weights * torch.log(shannon_weights))     # shannon_weights to compute entropy of the actual distribution: this is not to be confused with the weights used for sampling
     elif dist == "uniform":
         values = torch.rand(n_values, generator=generator)
         values = torch.mul(values, (lwr - upr))
@@ -50,8 +50,8 @@ def get_data_sampler(args, o_dims, sampler_seed = 12032025, **kwargs): # args he
     random.seed(sampler_seed)
 
     theta_diversity = args.diversity
-    if theta_diversity >= 12800001: assert theta_diversity == args.train_steps * args.batch_size * o_dims # * 2   # 2: n_vars for theta sampling
-    # 10.07. no * 2 n_vars, as we do not have different thetas for different noise terms
+    if theta_diversity >= 12801: assert theta_diversity == args.train_steps * args.batch_size * o_dims
+
     theta_quadruple = direct_thetas(args)
 
     seeds = random.sample(range(args.train_steps * 4), args.train_steps * 4)
@@ -98,32 +98,27 @@ class GaussianSamplerCF(DataSampler):
             if split == "train":
                 self.theta_seed = self.seeds[itr]["theta"]
                 _, val, wei, _ = self.theta_quadruple
+
                 generator = torch.Generator()
                 generator.manual_seed(self.theta_seed)
-                if len(val) < 12800001:
-                    # indices = list(torch.utils.data.WeightedRandomSampler(wei, n_thetas * o_vars * self.o_dims, generator=generator))
+                if len(val) < 12800:
                     indices = list(torch.utils.data.WeightedRandomSampler(wei, n_thetas * self.o_dims, generator=generator))
                     theta_b = val[indices]
                 else: 
-                    # theta_len = n_thetas * o_vars * self.o_dims
                     theta_len = n_thetas * self.o_dims
                     theta_b = val[range(itr * theta_len, (itr + 1) * theta_len)]
-                # theta_b = theta_b.view(n_thetas, 1, o_vars, self.o_dims)
                 theta_b = theta_b.view(n_thetas, 1, 1, self.o_dims)
 
             elif split == "val": 
                 self.theta_seed = self.eval_seeds[itr]["theta"]
-                # theta_b = torch.zeros(n_thetas, 1, o_vars, self.o_dims)
                 theta_b = torch.zeros(n_thetas, 1, 1, self.o_dims)
                 generator = torch.Generator()
                 generator.manual_seed(self.theta_seed) 
                 if self.dist == "uniform":
-                    # raw_theta = torch.rand(n_thetas, 1, o_vars, self.o_dims, generator = generator)
                     raw_theta = torch.rand(n_thetas, 1, 1, self.o_dims, generator = generator)
                     raw_theta = torch.mul(raw_theta, lwr-upr)
                     theta_b = raw_theta.add(upr)
                 elif self.dist == "norm":
-                    # raw_theta = torch.randn(n_thetas, 1, o_vars, self.o_dims, generator = generator)
                     raw_theta = torch.randn(n_thetas, 1, 1, self.o_dims, generator = generator)
                     theta_b = torch.mul(raw_theta, np.sqrt(12))
                 else: raise NotImplementedError
@@ -165,11 +160,6 @@ class LinearAssignments(GaussianSamplerCF):
         if itr is None:
             if self.dag_type != "any": w_b = torch.randn(n_thetas, 1, o_vars, self.o_dims) + theta_b
             else: 
-                ###
-                # t1 = theta_b.unsqueeze(3)
-                # t2 = theta_b.unsqueeze(2)
-                # theta_pairwise = t1 + 0 * t2
-                # theta_long = theta_pairwise.view(n_thetas, 1, o_vars ** 2, o_dims)
                 w_b = torch.randn(n_thetas, 1, o_vars ** 2, self.o_dims) + theta_b
             print("No w seed provided.")
         
@@ -186,6 +176,7 @@ class LinearAssignments(GaussianSamplerCF):
                 w_b = torch.zeros(n_thetas, 1, o_vars ** 2, self.o_dims)
                 w_b = torch.randn(n_thetas, 1, o_vars ** 2, self.o_dims, generator=generator) + theta_b
         self.w_b = w_b
+        self.beta_b = w_b[:, 0, 1, :]
         return w_b
         
 
@@ -232,9 +223,19 @@ class LinearAssignments(GaussianSamplerCF):
         else: raise NotImplementedError
 
 
+    def _transformations(self, transformation):
+        transformations = {
+            'addlin': lambda x, w, u: torch.mul(x, w) + u,
+            'mullin': lambda x, w, u: (3410.4**(-0.5)) * torch.mul(x, w) * u,
+            'tanh': lambda x, w, u: torch.tanh((1/13) * (torch.mul(x, w) + u)),
+            'sigmoid': lambda x, w, u: 1 / (1 + torch.exp((-1/13)*(torch.mul(x, w) + u))),
+        }
+        if transformation not in transformations: raise ValueError(f"Unknown transformation: {transformation}. Valid options are: {list(transformations.keys())}")
+        return transformations
+
     def _compose_dag(self, n_thetas, o_points, o_vars, 
                      counterfactual = False, itr = None, lwr_do = -6, upr_do = 6, 
-                     split = 'train', continuation = False, predict_y = False, transformation = "addlin"):
+                     split = 'train', continuation = False, transformation = "addlin"):
         assert lwr_do != upr_do
         if not continuation: us_b = self._sample_us(n_thetas, o_points, o_vars, itr = itr, split = split)
         # continuation: continuation of the in-context chain instead of starting counterfactual
@@ -244,25 +245,13 @@ class LinearAssignments(GaussianSamplerCF):
         
         xs_b = torch.zeros_like(us_b)
         w_b = self._sample_weights(n_thetas, o_vars, itr = itr, split = split)    
-        ### 09.07.
-        # if not counterfactual: w_b = self._sample_weights(n_thetas, o_vars, itr = itr, split = split)
-        # else: w_b = self._sample_weights(n_thetas, o_vars, split = split)
-        ### 09.07.
+
         if self.dag_type == "only_parent":
-            transformations = {
-                'addlin': lambda x, w, u: torch.mul(x, w) + u,
-                'mullin': lambda x, w, u: (3410.4**(-0.5)) * torch.mul(x, w) * u,
-                'tanh': lambda x, w, u: torch.tanh((1/13) * (torch.mul(x, w) + u)),
-                'sigmoid': lambda x, w, u: 1 / (1 + torch.exp((-1/13)*(torch.mul(x, w) + u))),
-            }
-            if transformation not in transformations: raise ValueError(f"Unknown transformation: {transformation}. Valid options are: {list(transformations.keys())}")
+            transformations = self._transformations(transformation)
             if not counterfactual:
                 xs_b[:,:,0,:] = us_b[:,:,0,:]
                 for j in range(1, o_vars):
                     xs_b[:,:,j,:] = transformations[transformation](us_b[:,:,0,:], w_b[:,:,j,:], us_b[:,:,j,:])
-                if predict_y:
-                    if split == 'train': self.do_seed = self.seeds[itr]["do"]
-                    elif split == 'val': self.do_seed = self.eval_seeds[itr]["do"]
             else:
                 if itr is None:
                     xs_b[:,:,0,:] = torch.rand(n_thetas, o_points, 1, self.o_dims)[:,:,0]
@@ -278,6 +267,7 @@ class LinearAssignments(GaussianSamplerCF):
                     xs_b[:,:,0,:] = torch.rand(n_thetas, o_points, 1, self.o_dims, generator=generator)[:,:,0]
                     xs_b = torch.mul(xs_b, (lwr_do - upr_do))
                     xs_b = xs_b.add(upr_do)
+
                 for j in range(1, o_vars):
                     xs_b[:,:,j,:] = transformations[transformation](xs_b[:,:,0,:], w_b[:,:,j,:], us_b[:,:,j,:])
 
@@ -315,10 +305,7 @@ class LinearAssignments(GaussianSamplerCF):
         # required to implement more complex structural assignments: not relevant for this project
         elif self.dag_type == "any":
             transformations = {
-                'addlin': lambda x, w, u: torch.sum(torch.mul(x, w), dim = 2) + u,
-                # 'mullin': lambda x, w, u: (3410.4**(-0.5)) * torch.mul(x, w) * u,
-                # 'tanh': lambda x, w, u: torch.tanh((1/13) * (torch.mul(x, w) + u)),
-                # 'sigmoid': lambda x, w, u: 1 / (1 + torch.exp((-1/13)*(torch.mul(x, w) + u))),
+                'addlin': lambda x, w, u: torch.sum(torch.mul(x, w), dim = 2) + u
             }
             if transformation not in transformations: raise ValueError(f"Unknown transformation: {transformation}. Valid options are: {list(transformations.keys())}")
             pa = self._parent_assignment(o_vars, itr = itr, split = split)
@@ -326,12 +313,8 @@ class LinearAssignments(GaussianSamplerCF):
                 xs_b[:,:,0,:] = us_b[:,:,0,:]
                 for j in range(1, o_vars):
                     if pa[j] != []:
-                        ### transformations
-                        # xs_b[:,:,j,:] = torch.sum(torch.mul(xs_b[:,:,pa[j],:], w_b[:,:,j,:].unsqueeze(1)), dim = 2) + us_b[:,:,j,:]  
-                        # xs_b[:,:,j,:] = transformations[transformation](xs_b[:,:,pa[j],:], w_b[:,:,j,:].unsqueeze(1), us_b[:,:,j,:])
                         weight_indices = [p * o_vars + j for p in pa[j]]
                         xs_b[:,:,j,:] = transformations[transformation](xs_b[:,:,pa[j],:], w_b[:, :, weight_indices, :], us_b[:,:,j,:])
-                        # we use the weights associated with the child as we have P_{f_j}(theta_j), i.e., the function determining f_j is completely determined by theta_j, in this simple case: beta_j
                     else:
                         xs_b[:,:,j,:] = us_b[:,:,j,:]
             else:
@@ -341,9 +324,6 @@ class LinearAssignments(GaussianSamplerCF):
                     xs_b = xs_b.add(upr_do)
                     print(f"No do seed provided.")
                 else:
-                    # if split == 'train': self.do_seed = self.seeds[itr]["do"]
-                    # elif split == 'val': self.do_seed = self.eval_seeds[itr]["do"]
-                    # we already set this during self._parent_assignment()
                     xs_b[:,:,0,:] = torch.zeros(n_thetas, o_points, 1, self.o_dims)[:,:,0]
                     generator = torch.Generator()
                     generator.manual_seed(self.do_seed)
@@ -352,7 +332,6 @@ class LinearAssignments(GaussianSamplerCF):
                     xs_b = xs_b.add(upr_do)
                 for j in range(1, o_vars):
                     if pa[j] != []:
-                        # xs_b[:,:,j,:] = torch.sum(torch.mul(xs_b[:,:,pa[j],:], w_b[:,:,j,:].unsqueeze(1)), dim = 2) + us_b[:,:,j,:]  
                         weight_indices = [p * o_vars + j for p in pa[j]]
                         xs_b[:,:,j,:] = transformations[transformation](xs_b[:,:,pa[j],:], w_b[:, :, weight_indices, :], us_b[:,:,j,:])
                         # we use the weights associated with the child as we have P_{f_j}(theta_j), i.e., the function determining f_j is completely determined by theta_j, in this simple case: beta_j
@@ -364,19 +343,12 @@ class LinearAssignments(GaussianSamplerCF):
         return xs_b
 
 
-    def _sample_delimiters(self, n_thetas, o_points):
+    def _sample_delimiters(self, n_thetas, o_points, constant_z = -1):
         random.seed(self.do_seed)
-        z_index = random.choice(range(o_points))
+        if constant_z != -1: z_index = constant_z
+        else: z_index = random.choice(range(o_points))
 
         delimiters = torch.full((n_thetas, 1, self.o_dims), z_index)
-
-        # filled = torch.full((n_thetas, 1, self.o_dims), z_index)
-        # delimiters = 10 * torch.sin(filled) + 1000
-
-        # binary_str = format(z_index, f'0{(self.o_dims)}b')
-        # assert len(binary_str) <= self.o_dims
-        # binary_tensor = torch.tensor([int(b) * (-200) + 100 for b in binary_str], dtype=torch.float32)
-        # delimiters = binary_tensor.view(1, 1, self.o_dims).repeat(n_thetas, 1, 1)
 
         return delimiters, z_index
 
@@ -396,33 +368,91 @@ class LinearAssignments(GaussianSamplerCF):
         return us_view
 
 
-    def complete_dataset(self, n_thetas, o_points, o_vars, itr = None, split = 'train', continuation = False, block_setup = True, with_delimiter = True, predict_y = False, transformation = "addlin"):
+    def _assign_curriculum_phases(self, phase):
+        phase_dict = {0: "beta", 1: "beta", 2: "xcf", 3: "xdiff", 4: "bx", 5: "y", 6: "all", 7: "all"}
+        type_kwargs = {}
+        for k, v in phase_dict.items():
+            if v == "all": continue
+            elif k == phase: func_to_call = {f"predict_{v}": 1}
+            else: func_to_call = {f"predict_{v}": 0}
+            type_kwargs.update(func_to_call)
+        return type_kwargs
+
+
+    def complete_dataset(self, n_thetas, o_points, o_vars, itr = None, split = 'train', continuation = False, block_setup = True, with_delimiter = True, transformation = "addlin", curriculum_phase = None, constant_z = -1, randomize_labels = False):
         if continuation: with_delimiter = False
+
         _ = self._sample_theta(n_thetas, o_vars, itr = itr, split = split, continuation = continuation)                     # initiate self.theta_b
+
+        # print(self.theta_b[:, 0, 0, 0])
+
+        assert curriculum_phase is None or curriculum_phase in [0, 1, 2, 3, 4, 5, 6, 7]
+        self.type_kwargs = self._assign_curriculum_phases(phase=curriculum_phase) if curriculum_phase is not None else {}
 
         # alternate observational and counterfactual data points
         if not block_setup:
-            with_delimiter = False # to be deleted # 10.07.
             if continuation: raise NotImplementedError
-            xs = self._compose_dag(n_thetas, o_points, o_vars, itr = itr, split = split, transformation = transformation, predict_y = predict_y)   # xs is four-dimensional
-            xs_cf = self._compose_dag(n_thetas, o_points, o_vars, counterfactual = True, itr = itr, split = split, predict_y = predict_y, transformation = transformation)
+            xs = self._compose_dag(n_thetas, o_points + 1, o_vars, itr = itr, split = split, transformation = transformation)   # xs is four-dimensional
+            xs_cf = self._compose_dag(n_thetas, o_points + 1, o_vars, counterfactual = True, itr = itr, split = split, transformation = transformation)
             xs_concat = torch.concat([xs, xs_cf], dim = 2)                                                                  # concat along o_vars dimension
-            data_view = xs_concat.view(n_thetas, 2 * o_vars * o_points, self.o_dims)
+            data_view = xs_concat.view(n_thetas, 2 * o_vars * (o_points + 1), self.o_dims)  # final position resembles counterfactual query
 
         # first learn beta in-context and then start counterfactual generation: block setup
         else:
             assert self.dag_type == "only_parent"
             xs = self._compose_dag(n_thetas, o_points, o_vars, itr = itr, split = split, transformation = transformation)
-            # 10.07. default set to False
-            if predict_y: xs_cf = self._compose_dag(n_thetas, o_points, o_vars, itr = itr, split = split, transformation = transformation, predict_y = predict_y)
-            # 10.07.
-            else: xs_cf = self._compose_dag(n_thetas, o_points, o_vars, itr =itr, split = split, counterfactual=True, transformation = transformation, predict_y = predict_y)
-            delimiter, z_index = self._sample_delimiters(n_thetas, o_points)
+
+            if self.type_kwargs.get("predict_y") == 1 and curriculum_phase is None: 
+                assert not continuation
+                if split == 'train': self.do_seed = self.seeds[itr]["do"]
+                elif split == 'val': self.do_seed = self.eval_seeds[itr]["do"]
+                xs_cf = self._compose_dag(n_thetas, o_points, o_vars, itr = itr, split = split, transformation = transformation)
+
+            elif continuation: xs_cf = self._compose_dag(n_thetas, o_points, o_vars, itr =itr, split = split, counterfactual=True, continuation = continuation, transformation = transformation)
+            else: xs_cf = self._compose_dag(n_thetas, o_points, o_vars, itr =itr, split = split, counterfactual=True, transformation = transformation)
+            delimiter, z_index = self._sample_delimiters(n_thetas, o_points, constant_z=constant_z)
             self.z_index = z_index
-            xs_cf_sub = xs_cf[:, z_index, :, :]    # extract relevant data
+
+            # irrelevant for this project
+            if self.type_kwargs.get("predict_beta") == 1:
+                xs_cf_sub = torch.cat([xs_cf[:, z_index, 0, :].unsqueeze(1),
+                                       self.w_b[:, 0, 1, :].unsqueeze(1)], 
+                                       dim = 1)
+            elif self.type_kwargs.get("predict_xdiff") == 1: 
+                xs_cf_sub = torch.cat([xs_cf[:, z_index, 0, :].unsqueeze(1),
+                                       (xs_cf[:, z_index, 0, :] - xs[:, z_index, 0, :]).unsqueeze(1)], 
+                                       dim = 1)
+            elif self.type_kwargs.get("predict_xcf") == 1:
+                xs_cf_sub = torch.cat([xs_cf[:, z_index, 0, :].unsqueeze(1),
+                                       xs_cf[:, z_index, 0, :].unsqueeze(1)],
+                                       dim = 1)
+            elif self.type_kwargs.get("predict_x") == 1:
+                xs_cf_sub = torch.cat([xs_cf[:, z_index, 0, :].unsqueeze(1),
+                                       xs[:, z_index, 0, :].unsqueeze(1)],
+                                       dim = 1)
+            elif self.type_kwargs.get("predict_y") == 1 and curriculum_phase is not None:
+                xs_cf_sub = torch.cat([xs_cf[:, z_index, 0, :].unsqueeze(1),
+                                       xs[:, z_index, 1, :].unsqueeze(1)],
+                                       dim = 1)
+            elif self.type_kwargs.get("predict_xy") == 1:
+                xs_cf_sub = torch.cat([xs_cf[:, z_index, 0, :].unsqueeze(1),
+                                       (xs_cf[:, z_index, 0, :] - xs[:, z_index, 0, :] + xs[:, z_index, 1, :]).unsqueeze(1)],
+                                       dim = 1)
+            elif self.type_kwargs.get("predict_bx") == 1:
+                assert transformation == "addlin"
+                xs_cf_sub = torch.cat([xs_cf[:, z_index, 0, :].unsqueeze(1),
+                                       (self.w_b[:, 0, 1, :] * (xs_cf[:, z_index, 0, :] - xs[:, z_index, 0, :])).unsqueeze(1)],
+                                       dim = 1)
+            else: xs_cf_sub = xs_cf[:, z_index, :, :]    # extract relevant data
+            
+            assert len(xs_cf_sub.shape) == 3
+            assert o_vars == 2
+            self.us_probe = self.us_b[:, z_index, o_vars - 1, :] # shape (n_thetas, self.o_dims)
             xs_view = xs.view(n_thetas, o_points * o_vars, self.o_dims)
             if with_delimiter: data_view = torch.concat([xs_view, delimiter, xs_cf_sub], dim = 1) # 09.07.
             else: data_view = torch.concat([xs_view, xs_cf_sub], dim = 1)
+
+        if randomize_labels: data_view[:, -1, :] = torch.rand_like(data_view[:, -1, :]) * 26 * (3**0.5) - 13 * (3**0.5)
 
         return data_view
 

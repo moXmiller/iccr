@@ -1,5 +1,0 @@
-inherit:
-    - sweepg.yaml
-    
-wandb:
-    name: "no_index_cf_E_50"

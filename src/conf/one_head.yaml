@@ -3,7 +3,6 @@ inherit:
 
 model:
     family: "gpt2"
-    n_embd: 256
     n_layer: 8
     n_head: 1
 

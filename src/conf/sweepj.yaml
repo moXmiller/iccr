@@ -1,8 +1,0 @@
-inherit:
-    - attentiononly.yaml
-
-training:
-    predict_y: 1
-    
-wandb:
-    name: "AO_E_25_y"

@@ -1,9 +1,0 @@
-inherit:
-    - sweepf.yaml
-
-training:
-    train_steps: 200000
-    diversity: 320000000
-    
-wandb:
-    name: "AO_E_25_200k"

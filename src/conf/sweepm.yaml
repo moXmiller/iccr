@@ -1,8 +1,0 @@
-inherit:
-    - sweepg.yaml
-
-training:
-    continuation: 1
-    
-wandb:
-    name: "AO_E_5_cont_with_plus_1"

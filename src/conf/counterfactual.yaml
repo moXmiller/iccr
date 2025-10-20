@@ -8,11 +8,7 @@ model:
 
 training:
     task: counterfactual_regression
-    batch_size: 64
     data_kwargs: {"dag_type": "only_parent"} # data_kwargs needed
-    train_steps: 200000
-    keep_every_steps: 150000
-    eval_steps: 1000
     curriculum:
         dims:
             start: 5    # this is what we call curriculum.n_dims_truncated throughout
@@ -20,7 +16,7 @@ training:
             inc: 1      # we only use fixed variable size of dimension 5
             interval: 2000
         points:
-            start: 1
+            start: 2
             end: 50
             inc: 2
             interval: 2000
@@ -30,7 +26,7 @@ training:
             inc: 1
             interval: 8000
 
-out_dir: "/cluster/scratch/millerm/models_cf/neurips"
+out_dir: "/cluster/scratch/millerm/models_cf/iclr"
 
 wandb:
     name: "counterfactual_regression"

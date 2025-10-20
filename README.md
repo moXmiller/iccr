@@ -1,16 +1,17 @@
-This repository contains the code and models for our paper:
+This repository[^1] contains the code and models for our paper:
 
-**What Can Transformers Learn In-Context? A Case Study of Simple Function Classes** <br>
-*Shivam Garg\*, Dimitris Tsipras\*, Percy Liang, Gregory Valiant* <br>
-Paper: http://arxiv.org/abs/2208.01066 <br><br>
+[^1]: This repository is based on _Garg et al. 2022: What Can Transformers Learn In-Context? A Case Study of Simple Function Classes_ (http://arxiv.org/abs/2208.01066)
 
-![](setting.jpg)
+**Counterfactual reasoning: an analysis of in-context emergence** <br>
+*Moritz Miller\*, Bernhard Schölkopf, Siyuan Guo* <br>
+
+![](figure_cf_reasoning.png)
 
 ```bibtex
-    @InProceedings{garg2022what,
-        title={What Can Transformers Learn In-Context? A Case Study of Simple Function Classes},
-        author={Shivam Garg and Dimitris Tsipras and Percy Liang and Gregory Valiant},
-        year={2022},
+    @misc{miller2025counterfactual,
+        title={Counterfactual reasoning: an analysis of in-context emergence},
+        author={Moritz Miller and Bernhard Schölkopf and Siyuan Guo},
+        year={2025},
         booktitle={arXiv preprint}
     }
 ```
@@ -22,23 +23,17 @@ You can start by cloning our repository and following the steps below.
 
     ```
     conda env create -f environment.yml
-    conda activate in-context-learning
+    conda activate icl
     ```
 
-2. Download [model checkpoints](https://github.com/dtsip/in-context-learning/releases/download/initial/models.zip) and extract them in the current directory.
-
-    ```
-    wget https://github.com/dtsip/in-context-learning/releases/download/initial/models.zip
-    unzip models.zip
-    ```
-
-3. [Optional] If you plan to train, populate `conf/wandb.yaml` with you wandb info.
+2. [Optional] If you plan to train, populate `conf/wandb.yaml` with your wandb info.
 
 That's it! You can now explore our pre-trained models or train your own. The key entry points
 are as follows (starting from `src`):
-- The `eval.ipynb` notebook contains code to load our own pre-trained models, plot the pre-computed metrics, and evaluate them on new data.
-- `train.py` takes as argument a configuration yaml from `conf` and trains the corresponding model. You can try `python train.py --config conf/toy.yaml` for a quick training run.
+- `train.py` takes as argument a configuration yaml from `conf` and trains the corresponding model. You can try `python train.py --config conf/one_head.yaml` to train an 8-layer, 1-head Transformer.
+- `write_eval.py` writes the evaluation files for a series of models. To use, put in the `cf_run_id` as indicated. You can then evalute your trained model.
+- `attentions.py` assists in the analysis of the Transformer attention.
+- `sde.py` is required to run the cyclic causal relationship example based on the Lotka-Volterra model. 
 
 # Maintainers
-* [Shivam Garg](https://cs.stanford.edu/~shivamg/)
-* [Dimitris Tsipras](https://dtsipras.com/)
+* [Moritz Miller](https://is.mpg.de/person/mmiller)

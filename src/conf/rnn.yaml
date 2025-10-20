@@ -4,15 +4,6 @@ inherit:
 model:
     family: "rnn"
     n_layer: 3
-    n_embd: 256
-
-training:
-    curriculum:
-        points:
-            start: 2
-            end: 50
-            inc: 2
-            interval: 2000
 
 wandb:
     name: "rnn"

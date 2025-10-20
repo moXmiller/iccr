@@ -1,5 +1,21 @@
 inherit:
-    - sweepf.yaml
+    - attentiononly.yaml
+
+model:
+    n_dims: 1
+    n_bins: 12
+    block_setup: 0
+
+training:
+    diversity: 3200000
+    constant_z: 19
+    training_loss: "rps"
+    curriculum:
+        dims:
+            start: 1
+            end: 1
+        points:
+            start: 30
 
 wandb:
-    name: "no_index_ao_E_25"
+    name: "rps_12_block0"

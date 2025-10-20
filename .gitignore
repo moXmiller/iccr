@@ -1,39 +1,67 @@
-.ipynb_checkpoints
-__pycache__
-models.zip
-models
+### folders
+src/__pycache__/
+models/
+.vscode/
+
+### .DS_Store
 .DS_Store
 src/.DS_Store
-src/attentions
-src/eval/
 src/attentions/.DS_Store
-eval.ipynb
-mm_execute.sh
-mm_retrieve_run_id.py
-mm_try_briefly.py
-sftp.json
-src/conf/any.yaml
-src/conf/sweepw.yaml
-src/conf/sweepv.yaml
-src/conf/sweepu.yaml
-src/conf/sweept.yaml
-src/conf/sweeps.yaml
-src/conf/sweepr.yaml
-src/conf/sweepq.yaml
-src/conf/sweepo.yaml
-src/conf/sweepn.yaml
-src/conf/sweepm.yaml
-src/conf/sweepk.yaml
-src/conf/sweepj.yaml
-src/conf/sweepi.yaml
-src/conf/sweeph.yaml
-src/conf/sweepg.yaml
-src/conf/sweepf.yaml
-src/conf/sweepe.yaml
-src/conf/sweepd.yaml
-src/conf/sweepy.yaml
-src/conf/sweepx.yaml
-src/conf/sweepz.yaml
-src/write_eval.py
 
-src/visualizations
+### evaluation
+src/eval/.vscode/
+src/eval/attentions/
+src/eval/iclr/
+src/eval/mse/
+src/eval/mse_new/
+src/eval/probing/
+src/eval/search_leayers.py
+
+### garg inheritance
+.ipynb_checkpoints
+src/eval.ipynb
+
+### sbatch script
+src/mm_execute.sh
+
+### exploration artifacts
+src/mm_try_briefly.py
+src/mm_retrieve_run_id.py
+src/causal_intervention_models.py
+src/lotka_volterra.py
+
+### configurations
+src/conf/any.yaml
+src/conf/sweepb.yaml
+src/conf/sweepc.yaml
+src/conf/sweepd.yaml
+src/conf/sweepf.yaml
+src/conf/sweepg.yaml
+src/conf/sweeph.yaml
+src/conf/sweepi.yaml
+src/conf/sweepj.yaml
+src/conf/sweepk.yaml
+src/conf/sweepm.yaml
+src/conf/sweepn.yaml
+src/conf/sweepo.yaml
+src/conf/sweepq.yaml
+src/conf/sweepr.yaml
+src/conf/sweeps.yaml
+src/conf/sweept.yaml
+src/conf/sweepu.yaml
+src/conf/sweepv.yaml
+src/conf/sweepw.yaml
+src/conf/sweepx.yaml
+src/conf/sweepy.yaml
+src/conf/sweepz.yaml
+src/conf/toy.yaml
+
+### visualizations
+src/visualizations/
+src/attentions/
+
+### output files
+src/output_files/
+
+### sde data
+src/sde/
