@@ -5,6 +5,9 @@ This repository[^1] contains the code and models for our paper:
 **Counterfactual reasoning: an analysis of in-context emergence** <br>
 *Moritz Miller\*, Bernhard Schölkopf, Siyuan Guo* <br>
 
+The paper has been accepted at NeurIPS (2025)[^2].
+[^2]: You can find the poster website here: https://neurips.cc/virtual/2025/poster/116021
+
 ![](drawing.png)
 
 ```bibtex
