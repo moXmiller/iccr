@@ -1,4 +1,4 @@
-This repository[^1] contains the code and models for our paper:
+This repository[^1] contains the code for our paper:
 
 [^1]: This repository is based on _Garg et al. 2022: What Can Transformers Learn In-Context? A Case Study of Simple Function Classes_ (http://arxiv.org/abs/2208.01066)
 
