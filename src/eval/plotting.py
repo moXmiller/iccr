@@ -310,10 +310,12 @@ def plot_mse_with_ci(models: list, n_points=50, savefig_path=None, conference = 
     ax.set_xlabel("Number of in-context examples", fontsize=22)
     ax.set_ylabel("In-context MSE (log)", fontsize=22)
     if "mlponly" in models: ax.legend(fontsize=22, loc="right")
-    else: ax.legend(fontsize=22, loc="upper right")
+    else: ax.legend(fontsize=22, loc="upper right", ncol = 2)
 
     ax.set_xlim([0,50])
-    ax.set_ylim([-2,3])
+    ax.set_ylim([-0.2,2.4])
+    ax.set_xticklabels(["0", "10", "20", "30", "40", "50"])
+    ax.set_yticklabels(["", "0", "", "1", "", "2"])
 
     plt.tight_layout()
 
@@ -1105,10 +1107,10 @@ if __name__ == "__main__":
     #     plot_mse_vs_ess(context_length=i, savefig_path="ess_both_dist")
 
     ### iclr
-    # rnn_type = ["rnn_2l_8h", "lstm_2l_8h", "gru_2l_8h", "12l_8h"]
-    # attention = ["gpt2_mlp", "gpt2_ao_2l", "gpt2_ao_4l", "gpt2_ao", "gpt2_ao_12l_8h"]
-    # plot_mse(attention, conference='iclr', savefig_path="attention")
-    # plot_mse_with_ci(attention, conference='iclr', savefig_path="attention")
+    rnn_type = ["rnn_2l_8h", "lstm_2l_8h", "gru_2l_8h", "12l_8h"]
+    attention = ["gpt2_mlp", "gpt2_ao_2l", "gpt2_ao_4l", "gpt2_ao", "gpt2_ao_12l_8h"]
+    plot_mse(rnn_type, conference='iclr')#, savefig_path="attention")
+    plot_mse_with_ci(rnn_type, conference='iclr', savefig_path="rnn")
     heads = ["1l_8h", "2l_4h", "4l_2h", "one_head"]
     optimal = ["optimal", "12l_8h_1"]
     minex = ["optimal", "12l_8h_1_minex30", "12l_8h_1_constz14_minex30"]
@@ -1161,7 +1163,7 @@ if __name__ == "__main__":
     sde = ["rnn_sde_2l_8h", "lstm_sde_2l_8h", "gru_sde_2l_8h", "12l_8h"]
     
     ode = ["12l_8h", "poisson0_12l_8h", "ode_poisson0_12l_8h"]
-    plot_sde_bar_chart(sde, examples = [20], number_events = 20)
+    # plot_sde_bar_chart(sde, examples = [20], number_events = 20)
     # plot_sde_bar_chart(models = sde, examples = [8, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28], poisson=1) #, savefig_path="true")
     # plot_mse_vs_ess(context_length=2, conference='iclr', savefig_path='ess')
     # plot_mse_vs_ess(context_length=2, conference='iclr', savefig_path='ess_normal_eval')
