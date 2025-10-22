@@ -1,5 +1,5 @@
 wandb:
     project: in-context-learning
-    entity: moritzmiller-eth-z-rich
-    notes: reproduce-gargs-icl-paper
+    entity: your-entity
+    notes: your-notes
     log_every_steps: 100
