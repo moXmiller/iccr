@@ -59,6 +59,9 @@ src/conf/sweepz.yaml
 src/visualizations/
 src/attentions/
 
+### identifying information
+src/directories.py
+
 ### output files
 src/output_files/
 

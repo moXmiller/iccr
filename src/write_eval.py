@@ -17,23 +17,22 @@ from dataset import get_data_sampler
 from tasks import mean_squared_error, mean_absolute_error, masked_mean_squared_error, brier, rps, hhi, cross_entropy, r2
 from sde import get_sde_data_sampler
 from tqdm import tqdm
+from directories import run_directory, probing_directory
 import random
 print("functions imported")
 
 def retrieve_model(args, continuation = True):
-    run_dir = "/cluster/scratch/millerm/models_cf"
+    run_dir = run_directory()
     conference = args.conference
     assert conference in ["neurips", "iclr"]
     if not os.path.exists(run_dir + "/" + conference):
         os.makedirs(run_dir + "/" + conference)
-    # df = read_run_dir(run_dir)
-
+    
     assert conference == "iclr"
     if conference == "iclr":
         run_id = nonnaive_retrieve_model(args)
     print(f"run_id: {run_id}")
 
-    # task_name = "counterfactual_regression"
     run_path = run_dir + "/" + conference + "/" + run_id
     run_path = str(run_path)
     print(f"run_path: {run_path}")
@@ -524,7 +523,7 @@ def extract_residual_stream(data_sampler, args):
     
     n_points = o_points
 
-    probing_dir = "/cluster/scratch/millerm/datasets_cf/iclr/probing/"
+    probing_dir = probing_directory()
     
     assert args.ao
     assert args.n_head == 1, "adapt residuals vector, see for loop below"
@@ -819,7 +818,7 @@ def train_probe(dataset, evalset, args, hidden_idx = None, probe_diff = False):
 
     weight = pd.DataFrame(model.weight.cpu().detach().numpy())
     bias = pd.DataFrame(model.bias.cpu().detach().numpy())
-    probing_dir = "/cluster/scratch/millerm/datasets_cf/iclr/probing/"
+    probing_dir = probing_directory()
 
     if not probe_diff: parts = ["weight"]
     else: parts = ["weight_diff"]
@@ -1166,8 +1165,9 @@ def sde_data_for_plot(data_sampler, args):
 
 
 def nonnaive_retrieve_model(args):
-    rundir = "/cluster/scratch/millerm/models_cf/iclr"
-    df = read_run_dir(rundir)
+    run_dir = run_directory()
+    conf_dir = run_dir + "/" + args.conference
+    df = read_run_dir(conf_dir)
 
     args_dict = vars(args)
     args_dict.pop("position")

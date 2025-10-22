@@ -34,7 +34,7 @@ You can start by cloning our repository and following the steps below.
 That's it! You can now explore our pre-trained models or train your own. The key entry points
 are as follows (starting from `src`):
 - `train.py` takes as argument a configuration yaml from `conf` and trains the corresponding model. You can try `python train.py --config conf/one_head.yaml` to train an 8-layer, 1-head Transformer.
-- `write_eval.py` writes the evaluation files for a series of models. To use, put in the `cf_run_id` as indicated. You can then evalute your trained model.
+- `write_eval.py` writes the evaluation files for a series of models. You can supply a set of arguments and evaluate on that model if it exists. You can then evalute your trained model.
 - `attentions.py` assists in the analysis of the Transformer attention.
 - `sde.py` is required to run the cyclic causal relationship example based on the Lotka-Volterra model. 
 

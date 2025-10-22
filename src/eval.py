@@ -5,6 +5,8 @@ import pandas as pd
 import torch
 import yaml
 
+from directories import run_directory
+
 import models
 
 def get_model_from_run(run_path, step=-1, only_conf=False, disentangled = False, weights = False):
@@ -72,8 +74,8 @@ def read_run_dir(run_dir):
     return df
 
 if __name__ == "__main__":
-    rundir = "/cluster/scratch/millerm/models_cf/iclr"
-    df = read_run_dir(rundir)
+    conf_dir = run_directory() + "/iclr"
+    df = read_run_dir(conf_dir)
     run_ids = []
     
     print(df.columns)
