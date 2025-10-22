@@ -5,19 +5,17 @@
 #SBATCH --gpus=rtx_3090:1
 #SBATCH --time=2000
 #SBATCH --job-name=iclr
-#SBATCH --output=output_files/12_09_iclr.out
+#SBATCH --output=output_files/file.out
 
-python_files_dir="/cluster/home/millerm/cf/garg_cf/src"
-conda_env="/cluster/scratch/millerm/miniconda3_ths/envs/icl"
-echo "paths read in"
+python_files_dir="$HOME/project/src"
+conda_env="$HOME/miniconda3/envs/icl"   # conda_env="/path/to/your/conda/env"
+echo "paths set: $python_files_dir and $conda_env"
 
 source activate $conda_env
 echo "conda environment activated"
 
-module load eth_proxy
-module load stack/2024-05
-module load gcc/13.2.0
-module load cuda/12.2.1
+module load cuda/12.2.1 || echo "CUDA not available, skipping module load"
+module load gcc/13.2.0 || echo "GCC not available, skipping module load"
 echo "modules loaded"
 
 wandb online
