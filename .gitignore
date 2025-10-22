@@ -54,7 +54,6 @@ src/conf/sweepw.yaml
 src/conf/sweepx.yaml
 src/conf/sweepy.yaml
 src/conf/sweepz.yaml
-src/conf/toy.yaml
 
 ### visualizations
 src/visualizations/
